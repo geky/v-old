@@ -3,14 +3,14 @@
 
 
 int main() {
-    numvar_t test;
-    test.num = 2.5;
-    test.var.meta &= ~0x7;
-    test.var.meta |= NUM_VAR;
+    union {double d; var_t v;} test;
+    test.d = 2.5;
+    var_meta(test.v) &= ~0x7;
+    var_meta(test.v) |= NUM_VAR;
     
     printf("value: ");
-    print(test.var);
-    printf("\nhash: 0x%x\n", hash(test.var));
+    var_print(test.v);
+    printf("\nhash: 0x%x\n", var_hash(test.v));
     printf("size: %d\n", sizeof test);
 
     return 0;
