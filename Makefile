@@ -1,9 +1,9 @@
 CC=gcc
 CFLAGS=-O3 -Wall -Werror -g
 
-LIGHT_O=main.o \
-        var.o
-
+LIGHT_O=main.o  \
+        var.o   \
+        table.o
 
 all: light
 

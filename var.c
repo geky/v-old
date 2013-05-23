@@ -4,6 +4,50 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <assert.h>
+
+
+void *var_alloc(size_t size) {
+    union { 
+        void *ptr; 
+        uint32_t bits; 
+    } temp;
+
+    temp.ptr = (void*)malloc(size);
+
+    assert(temp.ptr != 0); // out of memory
+    assert(sizeof temp == 4); // size constraint
+    assert((temp.bits & 0x7) == 0); // alignment
+
+    return temp.ptr;
+}
+
+void var_free(void *ptr) {
+    free(ptr);
+}
+
+
+void var_inc_ref(var_t var) {
+    if (var_type(var) & 0x4)
+        var_ref(var)++;
+}
+
+
+void var_dec_ref(var_t var) {
+    ref_t *ref;
+
+    if (!(var_type(var) & 0x4))
+        return;
+
+    ref = &var_ref(var);
+
+    if (--(*ref) == 0) {
+        if (var_type(var) == TABLE_VAR)
+            free(var_table(var)->entries);
+
+        free(ref);
+    }
+}
 
 
 int var_equals(var_t a, var_t b) {
@@ -13,7 +57,7 @@ int var_equals(var_t a, var_t b) {
     switch (var_type(a)) {
         case NULL_VAR: return 1; // all nulls are equivalent
         case NUM_VAR:  return var_num(a) == var_num(b);
-        case STR_VAR:  return !memcmp(var_str(a), var_str(b), var_size(a));
+        case STR_VAR:  return !memcmp(var_str(a), var_str(b), var_len(a));
         default:       return var_data(a) == var_data(b);
     }
 }
@@ -44,7 +88,7 @@ hash_t var_hash(var_t var) {
             hash_t hash = 5381;
             str_t str = var_str(var);
 
-            int len = var_size(var);
+            int len = var_len(var);
             int i = 0;
 
             // keep it from hashing overly long strings
@@ -65,7 +109,7 @@ hash_t var_hash(var_t var) {
 }
 
 
-
+ 
 // prints currently really just for debugging
 // should either be removed or refactored, very hacky as is
 
@@ -119,11 +163,11 @@ static inline void print_table(var_t var) {
 
 void var_print(var_t var) {
     switch (var_type(var)) {
-        case NULL_VAR:  printf("null");                              break;
-        case NUM_VAR:   printf("%f", var_num(var));                  break;
-        case STR_VAR:   printf("%.*s", var_size(var), var_str(var)); break;
-        case TABLE_VAR: print_table(var);                            break;
-        case FUNC_VAR:  printf("func { %p }", var_data(var));        break;
-        default:        printf("BAD VAR");                           break;
+        case NULL_VAR:  printf("null");                             break;
+        case NUM_VAR:   printf("%f", var_num(var));                 break;
+        case STR_VAR:   printf("%.*s", var_len(var), var_str(var)); break;
+        case TABLE_VAR: print_table(var);                           break;
+        case FUNC_VAR:  printf("func { %p }", var_data(var));       break;
+        default:        printf("BAD VAR");                          break;
     }
 }

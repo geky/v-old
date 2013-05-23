@@ -1,17 +1,19 @@
 #include "var.h"
 #include <stdio.h>
-
+#include <string.h>
+#include <stdlib.h>
 
 int main() {
-    union {double d; var_t v;} test;
-    test.d = 2.5;
-    var_meta(test.v) &= ~0x7;
-    var_meta(test.v) |= NUM_VAR;
-    
+    var_t test = nan_var;
+
     printf("value: ");
-    var_print(test.v);
-    printf("\nhash: 0x%x\n", var_hash(test.v));
+    var_print(test);
+    printf("\nhash: 0x%x\n", var_hash(test));
     printf("size: %d\n", sizeof test);
+    printf("loc: %p\n", &test);
+    printf("ref: %p\n", &var_ref(test));
+
+    var_dec_ref(test);
 
     return 0;
 }
