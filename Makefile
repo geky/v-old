@@ -1,16 +1,28 @@
 CC=gcc
-CFLAGS=-O3 -Wall -Werror -g
+#CFLAGS=-O3 -Wall -lm 
+CFLAGS=-O3 -pg -Wall -lm
+#CFLAGS=-O0 -g3 -gdwarf-2 -ggdb -Wall -lm
+#CFLAGS=-Os -Wall -lm
+
 
 LIGHT_O=main.o  \
+        light.o \
         var.o   \
-        table.o
+        num.o   \
+        str.o   \
+        table.o \
+        func.o
+        
 
 all: light
 
 light: $(LIGHT_O)
 	$(CC) $(CFLAGS) $(LIGHT_O) -o $@
 
-%.o: %.c bf
+%.s: %.c
+	$(CC) $(CFLAGS) $< -S 
+
+%.o: %.c
 	$(CC) -c $(CFLAGS) $< -o $@
 
 clean:
