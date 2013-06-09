@@ -10,8 +10,8 @@ LIGHT_O=main.o  \
         var.o   \
         num.o   \
         str.o   \
-        table.o \
-        func.o
+        tbl.o   \
+        fn.o
         
 
 all: light

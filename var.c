@@ -1,6 +1,6 @@
 #include "var.h"
 
-#include "table.h"
+#include "tbl.h"
 
 #include <math.h>
 #include <string.h>
@@ -16,7 +16,7 @@ int64_t d_space_left;
 
 
 void var_inc_ref(var_t var) {
-    if (var_type(var) & 0x4)
+    if (var.type & 0x4)
         var_ref(var)++;
 }
 
@@ -24,15 +24,15 @@ void var_inc_ref(var_t var) {
 void var_dec_ref(var_t var) {
     ref_t *ref;
 
-    if (!(var_type(var) & 0x4))
+    if (!(var.type & 0x4))
         return;
 
     ref = &var_ref(var);
     assert(*ref > 0);
 
     if (--(*ref) == 0) {
-        if (var_type(var) == TYPE_TABLE)
-            table_free(var_table(var));
+        if (var.type == TYPE_TBL)
+            tbl_free(var_tbl(var));
 
         var_free(ref);
     }
@@ -83,53 +83,52 @@ void var_free(void *ptr) {
 
 
 int var_equals(var_t a, var_t b) {
-    if (var_type(a) != var_type(b))
+    if (a.type != b.type)
         return 0;
 
-    switch (var_type(a)) {
+    switch (a.type) {
         case TYPE_NULL: return 1; // all nulls are equivalent
         case TYPE_NUM:  return var_num(a) == var_num(b);
         case TYPE_CSTR:
-        case TYPE_STR:  return !memcmp(var_str(a), var_str(b), var_len(a));
-        default:        return var_data(a) == var_data(b);
+        case TYPE_STR:  return !memcmp(var_str(a), var_str(b), a.str.len);
+        default:        return b.v.data == b.v.data;
     }
 }
 
 
-hash_t var_hash(var_t var) {
-    switch (var_type(var)) {
+uint32_t var_hash(var_t var) {
+    switch (var.type) {
         case TYPE_NULL:
             return 0; // nulls should never be hashed
 
         case TYPE_NUM: {
-            var_meta(var) &= ~0x7;
+            var.type = 0x0;
 
             // take int value as base to keep
             // it linear for integers
-            hash_t hash = (unsigned int)var.num;
+            uint32_t hash = (unsigned int)var.num;
 
             // move decimal part around to fit into
             // an int value to add to the hash
             var.num -= hash;
             var.num += 0x100000;
 
-            return hash ^ var_meta(var);
+            return hash ^ var.v.meta;
         }
 
         case TYPE_CSTR:
         case TYPE_STR: {
             // based off the djb2 algorithm
-            hash_t hash = 5381;
+            uint32_t hash = 5381;
             char *str = var_str(var);
 
-            int len = var_len(var);
-            int i = 0;
+            int i, len = var.str.len;
 
             // keep it from hashing overly long strings
             if (len > 32)
                 len = 32;
 
-            for (; i < len; i++) {
+            for (i = 0; i < len; i++) {
                 // hash = 33*hash + str[i]
                 hash = (hash << 5) + hash + str[i];
             }
@@ -138,7 +137,7 @@ hash_t var_hash(var_t var) {
         }
             
         default:
-            return (hash_t)var_data(var);
+            return var.v.data;
     }
 }
 
@@ -256,7 +255,7 @@ var_t light_repr(var_t *v, int n) {
     if (n < 1)
         return null_var;
 
-    switch (var_type(*v)) {
+    switch (v->type) {
         case TYPE_NULL:
             return str_var("null");
 
@@ -270,7 +269,7 @@ var_t light_repr(var_t *v, int n) {
                 var_t val = str_var("-inf");
 
                 if (num > 0.0)
-                    var_off(val)++;
+                    val.str.off++;
 
                 return val;
 
@@ -281,7 +280,7 @@ var_t light_repr(var_t *v, int n) {
                 var_t val;
                 char *str = var_alloc(sizeof(ref_t) + 16);
 
-                var_meta(val) = (uint32_t)str;
+                val.v.meta = (uint32_t)str;
                 str += 4;
 
                 if (num < 0.0) {
@@ -333,9 +332,9 @@ var_t light_repr(var_t *v, int n) {
                     
                 }
 
-                var_len(val) = (uint32_t)(str - var_meta(val) - 4);
-                var_off(val) = 0;
-                var_meta(val) |= TYPE_STR;
+                val.str.len = (uint32_t)(str - val.v.meta - 4);
+                val.str.off = 0;
+                val.type = TYPE_STR;
                 var_ref(val) = 1;
 
                 return val;
@@ -346,36 +345,36 @@ var_t light_repr(var_t *v, int n) {
         case TYPE_STR: {
             var_t val;
 
-            var_off(val) = 0;
-            var_len(val) = var_len(*v) + 2;
+            val.str.off = 0;
+            val.str.len = v->str.len + 2;
 
-            char *str = var_alloc(sizeof(ref_t) + var_len(val));
+            char *str = var_alloc(sizeof(ref_t) + val.str.len);
 
-            var_meta(val) = TYPE_STR | (uint32_t)str;
+            val.v.meta = TYPE_STR | (uint32_t)str;
             var_ref(val) = 1;
             str += 4;
 
             str[0] = '\'';
-            str[var_len(val)-1] = '\'';
-            memcpy(str+1, var_str(*v), var_len(*v));
+            str[val.str.len-1] = '\'';
+            memcpy(str+1, var_str(*v), v->str.len);
 
             return val;
         }
 
-        case TYPE_TABLE: {
-            table_t *table = var_table(*v);
-            int i, length = ((uint64_t)1) << table->size;
+        case TYPE_TBL: {
+            tbl_t *tbl = var_tbl(*v);
+            int i, len = ((uint64_t)1) << tbl->size;
             int space = 2; // make space for braces
 
-            entry_t *entries = table->entries;
-            entry_t *entstrs = var_alloc(sizeof(entry_t) * length);
+            entry_t *entries = tbl->entries;
+            entry_t *entstrs = var_alloc(sizeof(entry_t) * len);
 
             int valid_n = 1;
             int next_n = 0;
 
-            for (i=0; i<length; i++) {
-                int key_t = var_type(entries[i].key);
-                int val_t = var_type(entries[i].val);
+            for (i=0; i<len; i++) {
+                int key_t = entries[i].key.type;
+                int val_t = entries[i].val.type;
 
                 if (key_t == TYPE_NULL || val_t == TYPE_NULL)
                     continue;
@@ -387,22 +386,22 @@ var_t light_repr(var_t *v, int n) {
 
                 entstrs[i].val = light_repr(&entries[i].val, 1);
 
-                space += var_len(entstrs[i].key);
-                space += var_len(entstrs[i].val);
+                space += entstrs[i].key.str.len;
+                space += entstrs[i].val.str.len;
                 space += 4; // make space for colon and commas
             }
 
             var_t val;
             char *str = var_alloc(sizeof(ref_t) + space);
 
-            var_meta(val) = (uint32_t)str;
+            val.v.meta = (uint32_t)str;
             str += 4;
 
             *(str++) = '[';
 
-            for (i=0; i<length; i++) {
-                int key_t = var_type(entries[i].key);
-                int val_t = var_type(entries[i].val);
+            for (i=0; i<len; i++) {
+                int key_t = entries[i].key.type;
+                int val_t = entries[i].val.type;
                 double key_n = var_num(entries[i].key);
 
                 if (key_t == TYPE_NULL || val_t == TYPE_NULL)
@@ -414,15 +413,15 @@ var_t light_repr(var_t *v, int n) {
                     next_n = (int)key_n;
                     valid_n = (key_t == TYPE_NUM && next_n == key_n);
 
-                    memcpy(str, var_str(entstrs[i].key), var_len(entstrs[i].key));
-                    str += var_len(entstrs[i].key);
+                    memcpy(str, var_str(entstrs[i].key), entstrs[i].key.str.len);
+                    str += entstrs[i].key.str.len;
 
                     *(str++) = ':';
                     *(str++) = ' ';
                 }
 
-                memcpy(str, var_str(entstrs[i].val), var_len(entstrs[i].val));
-                str += var_len(entstrs[i].val);
+                memcpy(str, var_str(entstrs[i].val), entstrs[i].val.str.len);
+                str += entstrs[i].val.str.len;
 
                 *(str++) = ',';
                 *(str++) = ' ';
@@ -431,16 +430,16 @@ var_t light_repr(var_t *v, int n) {
                 var_dec_ref(entstrs[i].val);
             }
 
-            var_len(val) = (uint32_t)(str - var_meta(val) - 4);
-            var_off(val) = 0;
-            var_meta(val) |= TYPE_STR;
+            val.str.len = (uint32_t)(str - val.v.meta - 4);
+            val.str.off = 0;
+            val.type = TYPE_STR;
             var_ref(val) = 1;
 
-            if (var_len(val) == 1) {
-                var_len(val)++;
+            if (val.str.len == 1) {
+                val.str.len++;
                 *str = ']';
             } else {
-                var_len(val)--;
+                val.str.len--;
                 *(str-2) = ']';
             }
 
@@ -449,11 +448,11 @@ var_t light_repr(var_t *v, int n) {
             return val;
         }
 
-        case TYPE_FUNC:
+        case TYPE_FN:
             return str_var(""); // TODO
 
-        case TYPE_BIN:
-            return str_var("func() <builtin>");
+        case TYPE_BFN:
+            return str_var("fn() <builtin>");
 
         default:
             assert(0); // Unable to represent bad value
