@@ -56,7 +56,6 @@ typedef union var {
 } var_t;
 
 
-
 /* useful macro definitions */
 
 // for retrieving components

@@ -37,6 +37,17 @@ var_t str_concat(var_t a, var_t b) {
     return val;
 }
 
+var_t str_substr(var_t a, int start, int end) {
+    var_t val;
+
+    var_len(val) = end-start;
+    var_off(val) = var_off(a) + start;
+    var_meta(val) = var_meta(a);
+
+    var_inc_ref(val);
+    return val;
+}
+    
 
 var_t light_str(var_t *v, int n) {
     if (n < 1)

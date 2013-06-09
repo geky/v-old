@@ -1,16 +1,13 @@
 #include "table.h"
 
+#include "str.h"
+
 #include <string.h>
 #include <stdio.h>
 
 
 // the collision resolution is mostly based on
-// Python's implementation. Including the 
-// perturb shift applied as well as the recurrence
-
-#ifndef PERTURB_SHIFT
-#define PERTURB_SHIFT 5
-#endif
+// Python's implementation.
 
 
 static inline uint8_t table_npw2(int v) {
@@ -49,6 +46,7 @@ var_t table_create(uint32_t len) {
     table->entries = var_alloc(sizeof(entry_t) * len);
     memset(table->entries, 0, sizeof(entry_t) * len);
 
+    table->super = 0;
     table->nulls = 0;
     table->count = 0;
 
@@ -73,11 +71,17 @@ void table_free(table_t *table) {
 
 
 static uint32_t table_resize(table_t *table, uint32_t len) {
-    int i, oldsize = ((uint64_t)1) << table->size;
+    printf("resizing to %d for cap %d for %d\n",
+           1 << table_npw2(table_lcap(len)), 
+           table_lcap(len),
+           len);
+
+    int j, oldsize = ((uint64_t)1) << table->size;
     entry_t *oldent = table->entries;
 
     table->size = table_npw2(table_lcap(len));
     len = ((uint64_t)1) << table->size;
+    uint32_t msize = len - 1;
 
     table->entries = var_alloc(sizeof(entry_t) * len);
     memset(table->entries, 0, sizeof(entry_t) * len);
@@ -85,102 +89,250 @@ static uint32_t table_resize(table_t *table, uint32_t len) {
     table->nulls = 0;
     table->count = 0;
 
-    for (i=0; i<oldsize; i++)
-        table_set(table, oldent[i].key, oldent[i].val);
+    for (j=0; j<oldsize; j++) {
+        if (var_type(oldent[j].key) == TYPE_NULL ||
+            var_type(oldent[j].val) == TYPE_NULL)
+            continue;
+
+        hash_t i = var_hash(oldent[j].key);
+
+        for (;; i = (i<<2) + i + 1) {
+            entry_t *look = &table->entries[i & msize];
+
+            if (var_type(look->key) == TYPE_NULL) {
+                look->key = oldent[j].key;
+                look->val = oldent[j].val;
+                table->count++;
+
+                break;
+            }
+        }
+    }
 
     var_free(oldent);
     return len;
 }
 
 
-var_t table_lookup(table_t *table, var_t key) {
-    uint32_t msize = (((uint64_t)1) << table->size) - 1;
-    entry_t *look;
+static void table_set_super(table_t *table, var_t val) {
+    if (table->size == 0xff)
+        table_resize(table, 1);
 
-    hash_t hash = var_hash(key);
-    uint32_t i = hash;
+    var_t key_o = table->entries->key;
+    table->entries->key = str_var("super");
 
-    if (table->size == 0xff || var_type(key) == TYPE_NULL)
-        return null_var;
+    var_t val_o = table->entries->val;
+    table->entries->val = val;
+    var_inc_ref(val);
 
-    while (1) {
-        look = &table->entries[i & msize];
-
-        if (var_type(look->key) == TYPE_NULL)
-            return null_var; 
-
-        if (var_equals(key, look->key))
-            return look->val;
-
-        i = (i << 2) + i + hash + 1;
-        hash >>= PERTURB_SHIFT;
+    if ((table->super & 0x2) == 0) {
+        if (var_type(key_o) == TYPE_NULL)
+            table->count++;
+        else if (var_type(val_o) == TYPE_NULL)
+            table->nulls--;
+        else 
+            table_assign(table, key_o, val_o);
     }
+
+    var_dec_ref(key_o);
+    var_dec_ref(val_o);
+
+    table->super = (var_type(val) == TYPE_NULL) ? 0x0 : 
+                   0x2 | (var_type(val) == TYPE_TABLE);
 }
 
 
-void table_set(table_t *table, var_t key, var_t val) {
-    uint32_t msize = (((uint64_t)1) << table->size);
-    entry_t *entry;
 
-    hash_t hash = var_hash(key);
-    uint32_t i = hash;
+var_t table_lookup(table_t *table, var_t key) {
+    if (var_type(key) == TYPE_NULL)
+        return null_var;
 
+    hash_t i, hash = var_hash(key);
+
+    while (table->size != 0xff) {
+        uint32_t msize = (1 << table->size) - 1;
+
+        for (i = hash;; i = (i<<2) + i + 1) {
+            entry_t *look = &table->entries[hash & msize];
+
+            if (var_type(look->key) == TYPE_NULL)
+                break;
+
+            if (var_equals(key, look->key)) {
+                if (var_type(look->val) == TYPE_NULL)
+                    break;
+
+                return look->val;
+            }
+        }
+
+        if (!(table->super & 0x1))
+            break;
+
+        table = var_table(table->entries->val);
+    }
+
+    return null_var;
+}
+
+
+void table_assign(table_t *table, var_t key, var_t val) { 
     if (var_type(key) == TYPE_NULL)
         return;
 
-    if (table->size == 0xff || table_lcap(table->count+1) > msize)
+    hash_t i = var_hash(key);
+    uint32_t msize = ((uint64_t)1) << table->size;
+
+    if (i == 0 && var_equals(key, str_var("super"))) {
+        table_set_super(table, val);
+        return;
+    }
+
+
+    if (table_lcap(table->count+1) > msize)
         msize = table_resize(table, table->count+1 - table->nulls);
 
-    msize--;
+    for (msize--;; i = (i<<2) + i + 1) {
+        entry_t *look = &table->entries[i & msize];
 
-    while (1) {
-        entry = &table->entries[i & msize];
-
-        if (var_type(entry->key) == TYPE_NULL) {
+        if (var_type(look->key) == TYPE_NULL) {
             if (var_type(val) != TYPE_NULL) {
-                entry->key = key;
-                entry->val = val;
-
+                look->key = key;
                 var_inc_ref(key);
+
+                look->val = val;
                 var_inc_ref(val);
 
                 table->count++;
             }
+
             return;
         }
 
-        if (var_type(entry->val) == TYPE_NULL) {
-            if (var_type(val) != TYPE_NULL) {
-                var_dec_ref(entry->key);
+        if (var_equals(look->key, key)) {
+            if (var_type(look->val) == TYPE_NULL)
+                continue;
 
-                entry->key = key;
-                entry->val = val;
+            var_dec_ref(look->val);
+            look->val = val;
 
-                var_inc_ref(key);
-                var_inc_ref(val);
-
-                table->nulls--;
-            }
-            return;
-        }
-
-        if (var_equals(key, entry->key)) {
             if (var_type(val) == TYPE_NULL)
                 table->nulls++;
             else
                 var_inc_ref(val);
 
-            var_dec_ref(entry->val);
-            entry->val = val;
-
             return;
         }
-
-        i = (i << 2) + i + hash + 1;
-        hash >>= PERTURB_SHIFT;
     }
 }
 
 
+void table_set(table_t *table, var_t key, var_t val) {
+    if (var_type(key) == TYPE_NULL)
+        return;
+
+    hash_t i, hash = var_hash(key);
+    table_t *link = table;
+
+    if (hash == 0 && var_equals(key, str_var("super"))) {
+        table_set_super(table, val);
+        return;
+    }
 
 
+    while (1) {
+        uint32_t j, len = ((uint64_t)1) << link->size;
+        uint32_t msize = len - 1;
+
+        for (i = hash, j = 0; j < len; i = (i<<2) + i + 1, j++) {
+            entry_t *look = &link->entries[hash & msize];
+
+            if (var_type(look->key) == TYPE_NULL)
+                break;
+
+            if (var_equals(look->key, key)) {
+                if (var_type(look->val) == TYPE_NULL)
+                    break;
+
+                var_dec_ref(look->val);
+                look->val = val;
+
+                if (var_type(val) == TYPE_NULL)
+                    table->nulls++;
+                else
+                    var_inc_ref(val);
+
+                return;
+            }
+        }
+
+        if (!(link->super & 0x1))
+            break;
+
+        link = var_table(link->entries->val);
+    }
+
+
+    if (var_type(val) == TYPE_NULL)
+        return;
+
+    uint32_t msize = ((uint64_t)1) << table->size;
+    table->count++;
+
+    if (table_lcap(table->count) > msize)
+        msize = table_resize(table, table->count - table->nulls);
+
+    for (i = hash, msize--;; i = (i<<2) + i + 1) {
+        entry_t *look = &table->entries[i & msize];
+
+        if (var_type(look->key) == TYPE_NULL) {
+            look->key = key;
+            var_inc_ref(key);
+
+            look->val = val;
+            var_inc_ref(val);
+
+            return;
+        }
+    }
+}
+
+
+var_t light_table(var_t *v, int n) {
+    if (n < 1)
+        return table_create(0);
+
+    switch (var_type(*v)) {
+        case TYPE_NUM:
+            return table_create(ceil(var_num(*v)));
+
+        case TYPE_STR: {
+            uint32_t i, length = var_len(*v);
+
+            var_t out = table_create(var_len(*v));
+
+            for (i = 0; i < length; i++)
+                table_assign(var_table(out), num_var(i), str_substr(*v, i, i+1));
+
+            return out;
+        }
+
+        case TYPE_TABLE: {
+            table_t *table = var_table(*v);
+            uint32_t i, length = ((uint64_t)1) << table->size;
+            
+            var_t out = table_create(table->count - table->nulls);
+
+            for (i = 0; i < length; i++) {
+                entry_t *look = &table->entries[i];
+
+                table_assign(var_table(out), look->key, look->val);
+            }
+
+            return out;
+        }
+
+        default:
+            return table_create(0);
+    }
+}

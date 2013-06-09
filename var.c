@@ -28,6 +28,7 @@ void var_dec_ref(var_t var) {
         return;
 
     ref = &var_ref(var);
+    assert(*ref > 0);
 
     if (--(*ref) == 0) {
         if (var_type(var) == TYPE_TABLE)
@@ -53,16 +54,17 @@ void *var_alloc(size_t size) {
 
     temp.ptr = (void*)malloc(size);
 
+
+    assert(temp.ptr != 0); // out of memory
+    assert(sizeof temp == 4); // size constraint
+    assert((temp.bits & 0x7) == 0); // alignment
+
 #ifndef NDEBUG
     *(int64_t*)temp.ptr = size;
     d_space_used += size;
     d_space_left += size;
     temp.ptr = ((int64_t*)temp.ptr) + 1;
 #endif
-
-    assert(temp.ptr != 0); // out of memory
-    assert(sizeof temp == 4); // size constraint
-    assert((temp.bits & 0x7) == 0); // alignment
 
     return temp.ptr;
 }
@@ -132,7 +134,7 @@ hash_t var_hash(var_t var) {
                 hash = (hash << 5) + hash + str[i];
             }
 
-            return hash;
+            return hash - 274863188;
         }
             
         default:
