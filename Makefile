@@ -1,30 +1,31 @@
 CC=gcc
 #CFLAGS=-O3 -Wall -lm 
-CFLAGS=-O3 -pg -Wall -lm
-#CFLAGS=-O0 -g3 -gdwarf-2 -ggdb -Wall -lm
+#CFLAGS=-O3 -pg -Wall -lm
+CFLAGS=-O0 -g3 -gdwarf-2 -ggdb -Wall -lm
 #CFLAGS=-Os -Wall -lm
 
 
-LIGHT_O=main.o  \
-        light.o \
-        var.o   \
-        num.o   \
-        str.o   \
-        tbl.o   \
-        fn.o
+V_O=main.o  \
+    var.o   \
+    num.o   \
+    str.o   \
+    tbl.o   \
+    fn.o    \
+    parse.o \
+    vdbg.o
         
 
-all: light
+all: v
 
-light: $(LIGHT_O)
-	$(CC) $(CFLAGS) $(LIGHT_O) -o $@
+v: $(V_O)
+	$(CC) $(V_O) $(CFLAGS) -o $@
 
 %.s: %.c
 	$(CC) $(CFLAGS) $< -S 
 
 %.o: %.c
-	$(CC) -c $(CFLAGS) $< -o $@
+	$(CC) -c $< $(CFLAGS) -o $@
 
 clean:
 	-rm *.o 
-	-rm light
+	-rm v

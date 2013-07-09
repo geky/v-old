@@ -3,11 +3,12 @@
 
 #include "var.h"
 
-typedef var_t *(*bin_t)(var_t *, int);
-
 typedef struct fn {
-    var_t scope;
-    var_t code;
+    var_t *args;   // str
+    int nargs;
+
+    var_t closure; // tbl
+    var_t code;    // str
 } fn_t;
 
 
@@ -15,7 +16,7 @@ typedef struct fn {
 var_t fn_create(char *);
 
 // function for calling functions 
-var_t fn_call(var_t, var_t *args, int nargs);
+var_t fn_call(var_t fn, var_t args);
 
 // builtin for creating functions
 var_t light_fn(var_t *, int);
