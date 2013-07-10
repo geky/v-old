@@ -12,7 +12,7 @@
 int main() {
     d_set_stack();
 
-    var_t code = str_var("[a:4 ,b=2,3,4,5,]\0");
+    var_t code = str_var("2+3 || 5*4 + 2\0");
     var_t res, result;
     res = parse_single(code);
 

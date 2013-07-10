@@ -26,7 +26,7 @@ void var_dec_ref(var_t var) {
 
     if (--(*ref) == 0) {
         if (var.type == TYPE_TBL)
-            tbl_free(var_tbl(var));
+            tbl_free(var.tbl);
 
         var_free(ref);
     }
@@ -76,7 +76,7 @@ void var_free(void *ptr) {
 
 void var_print(var_t v) {
     var_t result = light_repr(&v, 1);
-    printf(":%.*s:\n", result.len, var_str(result));
+    printf("|%.*s|", result.len, var_str(result));
 }
 
 
@@ -356,7 +356,7 @@ var_t light_repr(var_t *v, int n) {
         }
 
         case TYPE_TBL: {
-            tbl_t *tbl = var_tbl(*v);
+            tbl_t *tbl = v->tbl;
             int i, len = ((uint64_t)1) << tbl->size;
             int space = 2; // make space for braces
 

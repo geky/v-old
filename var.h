@@ -41,6 +41,7 @@ typedef struct var {
                 type_t type : 3;
 
                 ref_t *ref;
+                const char *str;
             };
 
             union {
@@ -108,20 +109,14 @@ typedef struct var {
 
 #define var_num(v) (((var_t){{(v).bits & ~0x7}}).num)
 #define var_str(v) ((const char*)(&var_ref(v)+1) + ((v).off))
-#define var_tbl(v) ((v).tbl)
-#define var_fn(v)  ((v).fn)
-#define var_bfn(v) ((v).bfn)
 
 // macros for creating literal vars in c
 
 #define null_var   ((var_t){{0}})
 
-#define nan_var    ((var_t){{TYPE_NUM | (uint64_t)NAN}})
-
-#define inf_var    ((var_t){{TYPE_NUM | (uint64_t)INFINITY}})
-
-#define num_var(n) ((var_t){{TYPE_NUM | (~0x7 &  \
-                    ((union { double d; uint64_t i; }){n}).i)}})
+#define num_var(n) ((var_t){{TYPE_NUM | (~0x7 & ((var_t){.num=(n)}).bits)}})
+#define nan_var    num_var(NAN)
+#define inf_var    num_var(INFINITY)
 
 #define str_var(n) ({ const static struct {                  \
                         ref_t __attribute__((aligned(8))) r; \
@@ -129,18 +124,13 @@ typedef struct var {
                       } str = { 1, {(n)} };                  \
                                                              \
                       ((var_t){{TYPE_CSTR |                  \
-                        ((union { struct {                   \
-                            const void *s;                   \
-                            uint16_t off;                    \
-                            uint16_t len;                    \
-                        } s; uint64_t i; }                   \
-                      ){{&str, 0, sizeof(n)-1}}).i}}); })
+                        (~0x7 & ((var_t){                    \
+                          .ref = (ref_t*)&str,               \
+                          .off = 0,                          \
+                          .len = sizeof(n)-1                 \
+                        }).bits)    }});     })
 
-#define fn_var(n)  ((var_t){{TYPE_BFN | (~0x7 &         \
-                       ((union { struct {               \
-                           uint32_t padd;               \
-                           var_t (*bfn)(var_t);         \
-                       }; uint64_t i; }){{0, n}}).i)}})
+#define fn_var(n)  ((var_t){{TYPE_BFN | (~0x7 & ((var_t){.bfn=(n)}).bits)}})
 
 
 

@@ -73,13 +73,6 @@ void tbl_free(tbl_t *tbl) {
 
 
 static uint32_t tbl_resize(tbl_t *tbl, uint32_t len) {
-#ifndef NDEBUG
-    printf("resizing to %d for cap %d for %d\n",
-           1 << tbl_npw2(tbl_lcap(len)), 
-           tbl_lcap(len),
-           len);
-#endif
-
     int j, oldsize = ((uint64_t)1) << tbl->size;
     entry_t *oldent = tbl->entries;
 
@@ -171,7 +164,7 @@ var_t tbl_lookup(tbl_t *tbl, var_t key) {
         if (!(tbl->super & 0x1))
             break;
 
-        tbl = var_tbl(tbl->entries->val);
+        tbl = tbl->entries->val.tbl;
     }
 
     return null_var;
@@ -271,7 +264,7 @@ void tbl_set(tbl_t *tbl, var_t key, var_t val) {
         if (!(link->super & 0x1))
             break;
 
-        link = var_tbl(link->entries->val);
+        link = link->entries->val.tbl;
     }
 
 
@@ -315,13 +308,13 @@ var_t light_tbl(var_t *v, int n) {
             var_t out = tbl_create(len);
 
             for (i=0; i<len; i++)
-                tbl_assign(var_tbl(out), num_var(i), str_substr(*v, i, i+1));
+                tbl_assign(out.tbl, num_var(i), str_substr(*v, i, i+1));
 
             return out;
         }
 
         case TYPE_TBL: {
-            tbl_t *tbl = var_tbl(*v);
+            tbl_t *tbl = v->tbl;
             uint32_t i, len = ((uint64_t)1) << tbl->size;
             
             var_t out = tbl_create(tbl->count - tbl->nulls);
@@ -329,7 +322,7 @@ var_t light_tbl(var_t *v, int n) {
             for (i=0; i<len; i++) {
                 entry_t *look = &tbl->entries[i];
 
-                tbl_assign(var_tbl(out), look->key, look->val);
+                tbl_assign(out.tbl, look->key, look->val);
             }
 
             return out;

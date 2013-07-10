@@ -24,7 +24,7 @@ void d_set_stack(void) {
 
 void d_poke_stack(void) {
     int64_t top;
-    top = (int16_t)(intptr_t)(&top - max_stack);
+    top = (int16_t)(intptr_t)((char*)&top - (char*)start_stack);
     top = (top < 0) ? -top : top;
 
     if (top > max_stack)
