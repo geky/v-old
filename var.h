@@ -1,5 +1,5 @@
-#ifndef LIGHT_VAR
-#define LIGHT_VAR
+#ifndef V_VAR
+#define V_VAR
 
 #include <stdint.h>
 #include <stdlib.h>

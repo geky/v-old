@@ -1,5 +1,5 @@
-#ifndef LIGHT_TBL
-#define LIGHT_TBL
+#ifndef V_TBL
+#define V_TBL
 
 #include "var.h"
 

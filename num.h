@@ -1,5 +1,5 @@
-#ifndef LIGHT_NUM
-#define LIGHT_NUM
+#ifndef V_NUM
+#define V_NUM
 
 #include "var.h"
 

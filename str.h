@@ -1,5 +1,5 @@
-#ifndef LIGHT_STR
-#define LIGHT_STR
+#ifndef V_STR
+#define V_STR
 
 #include "var.h"
 

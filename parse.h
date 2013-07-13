@@ -1,5 +1,5 @@
-#ifndef LIGHT_PARSE
-#define LIGHT_PARSE
+#ifndef V_PARSE
+#define V_PARSE
 
 #include "var.h"
 
