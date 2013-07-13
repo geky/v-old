@@ -14,6 +14,8 @@
 
 #define MAX_SPACE 0xfffff
 
+#define HIDE_FLAG(h) ((var_t){.meta=(h)})
+
 #define S_ASSERT(a) if (!(a)) {              \
                         p->val = null_var;   \
                         p->ended = 1;        \
@@ -21,8 +23,6 @@
                         p->has_key = 0;      \
                         return 1;            \
                     }
-
-#define HIDE_FLAG(h) ((var_t){.meta=(h)})
 
 enum {
     DOT_OP        = ( 1<<3),
@@ -152,6 +152,11 @@ static inline void subskip(struct parse *p) {
 #endif
 }
 
+/*
+static void apply_block(struct parse *p) {
+    const char *start
+  */  
+
 static var_t v_add(var_t args) {
     var_t a = tbl_lookup(args.tbl, num_var(0));
     var_t b = tbl_lookup(args.tbl, num_var(1));
@@ -170,9 +175,11 @@ var_t parse_single(var_t input) {
     if (input.type != TYPE_STR && input.type != TYPE_CSTR)
         return null_var;
 
+    var_t ops = tbl_create(0);
+
     struct parse p = {
         .scope = tbl_create(0),
-        .ops = tbl_create(0).tbl,
+        .ops = ops.tbl,
 
         .meta = input.meta,
         .start = var_str(input),
@@ -189,6 +196,34 @@ var_t parse_single(var_t input) {
     tbl_assign(p.ops, str_var("."), HIDE_FLAG(DOT_OP));
     tbl_assign(p.ops, str_var("||"), HIDE_FLAG(OR_OP));
     tbl_assign(p.ops, str_var("&&"), HIDE_FLAG(AND_OP));
+
+    tbl_assign(p.scope.tbl, str_var("ops"), ops);    
+
+    subparse(&p);
+    presolve(&p);
+    return p.val;
+}
+
+var_t vparse(var_t code, var_t scope) {
+    assert(code.type == TYPE_STR || code.type == TYPE_CSTR);
+    assert(scope.type == TYPE_TBL);
+
+    struct parse p = {
+        .scope = scope,
+        .target = scope,
+
+        .meta = code.meta,
+        .start = var_str(code),
+        .code = var_str(code),
+        .end = var_str(code) + code.len,
+    };
+
+    {   var_t ops = tbl_lookup(scope.tbl, str_var("ops"));
+        if (ops.type == TYPE_TBL)
+            p.ops = ops.tbl;
+        else
+            p.ops = tbl_create(0).tbl;
+    }
 
     subparse(&p);
     presolve(&p);
@@ -568,6 +603,24 @@ static void m_block_parse(struct parse *p) {
 };
 
 static void b_block_parse(struct parse *p) {
+    int in_paren = p->in_paren;
+    int in_op = p->in_op;
+    int op_space = p->op_space;
+    p->in_paren = 0;
+    p->in_op = 0;
+
+    while (!p->ended) {
+        p->val = null_var;
+        p->has_val = 0;
+
+        subparse(p);
+        presolve(p);
+    }
+
+    p->in_paren = in_paren;
+    p->in_op = in_op;
+    p->op_space = op_space;
+    p->ended = 0;
 }
 
 
@@ -575,13 +628,22 @@ static int paren_parse(struct parse *p) {
     p->code++;
 
     if (p->has_key || p->has_val) {
+        presolve_key(p);
+
+        var_t target = p->target;
+        p->target = tbl_create(1);
+        tbl_assign(p->target.tbl, str_var("this"), p->key);
+
         presolve(p);
         var_t fn = p->val;
 
         p->val = null_var;
         p->has_val = 0;
         m_block_parse(p);
-        // TODO fn call
+
+        p->val = fn_call(fn, p->val);
+        p->target = target;
+
     } else {
         s_block_parse(p);
     }
@@ -619,6 +681,20 @@ static int brace_parse(struct parse *p) {
 }
 
 static int bracket_parse(struct parse *p) {
+    p->code++;
+
+    S_ASSERT(!p->has_key && !p->has_val);
+
+    var_t scope = p->scope;
+    var_t target = p->target;
+    p->target = p->scope = tbl_create(1);
+    tbl_assign(p->scope.tbl, str_var("super"), scope);
+
+    b_block_parse(p); 
+    p->target = target;
+    p->scope = scope;
+
+    S_ASSERT(*p->code++ == '}');
     return 0;
 }
 
@@ -762,13 +838,17 @@ static int skip(struct parse *p) {
 
 static int block_skip(struct parse *p) {
     while (skippers[*p->code & 0x7f] != end_parse)
-        p->code++;
+        S_ASSERT(++p->code != p->end);
+
     return 0;
 }
 
 static int str_skip(struct parse *p) {
     char quote = *p->code++;
-    while (*p->code++ != quote);
+    while (*p->code != quote)
+        S_ASSERT(++p->code != p->end);
+
+    p->code++;
     return 0;
 }
 

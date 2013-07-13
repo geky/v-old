@@ -32,14 +32,11 @@ static inline int tbl_lcap(int v) {
 
 var_t tbl_create(uint32_t len) {
     var_t var;
-    tbl_t *tbl;
-    ref_t *ref = var_alloc(sizeof(ref_t) + sizeof(tbl_t));
+    tbl_t *tbl = var_alloc(sizeof(tbl_t));
 
-    *ref = 1;
-    var.ref = ref;
+    tbl->ref = 1;
+    var.ref = &tbl->ref;
     var.type = TYPE_TBL;
-
-    tbl = (tbl_t*)(ref+1);
     var.tbl = tbl;
 
     tbl->size = tbl_npw2(tbl_lcap(len));

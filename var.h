@@ -63,45 +63,6 @@ typedef struct var {
 } var_t;
 
 
-//typedef union var {
-//    uint64_t bits;
-//    uint8_t  bytes[8];
-//
-//    struct {
-//        uint32_t meta;
-//        uint32_t data;
-//    } v;
-//
-//    uint32_t type : 3;
-//    ref_t *ref;
-//
-//
-//    double num;
-//
-//    struct {
-//        ref_t *ref;
-//
-//        uint16_t off;
-//        uint16_t len;
-//    } str;
-//
-//    struct {
-//        ref_t *ref;
-//        struct tbl *ptr;
-//    } tbl;
-//
-//    struct {
-//        ref_t *ref;
-//        struct fn *ptr;
-//    } fn;
-//
-//    struct {
-//        uint32_t _padd;
-//        union var *(*ptr)(union var *, int);
-//    } bfn;
-//} var_t;
-//
-
 /* useful macro definitions */
 
 // for retrieving components

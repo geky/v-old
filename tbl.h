@@ -10,6 +10,8 @@ typedef struct entry {
 } entry_t;
 
 typedef struct tbl {
+    ref_t ref;
+
     uint8_t super;    // indicates if super is present
     uint8_t size;     // log 2 size of the entries
     uint16_t nulls;   // count of null entries
@@ -17,6 +19,22 @@ typedef struct tbl {
 
     entry_t *entries; // array of entries
 } tbl_t;
+
+
+// macro for looping through all values in a table
+#define for_tbl(k, v, tbl, block) {                         \
+        int i, l = ((uint64_t)1) << (tbl)->size;            \
+        var_t k, v;                                         \
+                                                            \
+        for (i=0; i<l; i++) {                               \
+            k = (tbl)->entries[i].key;                      \
+            v = (tbl)->entries[i].val;                      \
+            if ( k.type != TYPE_NULL &&                     \
+                 v.type != TYPE_NULL ) {                    \
+                block                                       \
+            }                                               \
+        }                                                   \
+    }
 
 
 // functions for creating tables in c
