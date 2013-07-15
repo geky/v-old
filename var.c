@@ -443,7 +443,7 @@ var_t light_repr(var_t *v, int n) {
         }
 
         case TYPE_FN:
-            return str_var(""); // TODO
+            return str_var("fn"); // TODO
 
         case TYPE_BFN:
             return str_var("fn() <builtin>");

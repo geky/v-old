@@ -4,6 +4,8 @@
 #include "var.h"
 
 typedef struct fn {
+    ref_t ref;
+
     var_t args;    // tbl
     var_t closure; // tbl
     var_t code;    // str

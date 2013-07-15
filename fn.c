@@ -7,7 +7,23 @@
 #include <assert.h>
 
 var_t fn_create(var_t code, var_t clos) {
-    return null_var;
+    var_t var;
+    fn_t *fn = var_alloc(sizeof(fn_t));
+
+    fn->ref = 1;
+    var.ref = &fn->ref;
+    var.type = TYPE_FN;
+    var.fn = fn;
+
+    fn->code = code;
+    var_inc_ref(code);
+    fn->closure = clos;
+    var_inc_ref(clos);
+    
+    fn->args = tbl_create(1);
+    tbl_assign(fn->args.tbl, str_var("this"), num_var(1));
+
+    return var;
 }
 
 var_t fn_call(var_t vfn, var_t args) {
