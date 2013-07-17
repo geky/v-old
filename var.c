@@ -300,7 +300,6 @@ var_t light_repr(var_t *v, int n) {
                         *(str++) = '.';
 
                     int d = floor(num / digit);
-                    printf("d %d = n %f / d %f\n", d, num, digit);
                     *(str++) = '0' + d;
 
                     num -= d * digit;
