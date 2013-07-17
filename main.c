@@ -12,7 +12,7 @@
 int main() {
     d_set_stack();
 
-    var_t code = str_var("{if(0) 1 else 2}\0");
+    var_t code = str_var("{3 +      +  if(1) 2       }\0");
     var_t res, result;
     res = parse_single(code);
 

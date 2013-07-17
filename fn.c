@@ -48,6 +48,10 @@ var_t fn_call(var_t vfn, var_t args) {
                     tbl_assign(scope.tbl, temp, val);
             });
 
+            printf("calling ");
+            var_print(fn->code);
+            printf("\n");
+
             return vparse(fn->code, scope);
         }
     }

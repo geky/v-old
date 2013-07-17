@@ -8,6 +8,7 @@
 #include "vdbg.h"
 
 #include <stdio.h>
+#include <string.h>
 #include <assert.h>
 
 //TODO create errors
@@ -52,6 +53,7 @@ struct parse {
 
     double n;
     unsigned int op_space;
+    unsigned int pre_space;
 
     uint32_t meta;
     const char *start;
@@ -65,6 +67,7 @@ struct parse {
     int in_op    : 1;
     int ended    : 1;
     int dotted   : 1;
+    int skip_to  : 1;
 };
 
 extern int (*parsers[128])(struct parse *p);
@@ -77,7 +80,7 @@ static inline void presolve(struct parse *p) {
             if (p->val.type == TYPE_TBL)
                 p->val = tbl_lookup(p->val.tbl, p->key);
             else
-                p->val = p->key;
+                p->val = null_var;
         } else {
             assert(p->scope.type == TYPE_TBL);
             p->val = tbl_lookup(p->scope.tbl, p->key);
@@ -90,15 +93,13 @@ static inline void presolve(struct parse *p) {
     p->has_key = 0;
 }
 
-// TODO decide exactly what this is for
-// as its purpose is split right now
 static inline void presolve_key(struct parse *p) {
     assert(p->target.type == TYPE_TBL);
 
     if (!p->has_key) {
         if (p->has_val) {
             p->key = p->val;
-            p->val = null_var;
+            p->val = p->target;
         } else {
             p->key = null_var;
         }
@@ -118,13 +119,45 @@ static inline void presolve_key(struct parse *p) {
     p->has_key = 1;
 }
 
+static inline void presolve_fn(struct parse *p) {
+    assert(p->target.type == TYPE_TBL);
+
+    if (p->has_key) {
+        if (p->has_val) {
+            if (p->val.type == TYPE_TBL) {
+                var_t temp = p->val;
+                p->val = tbl_lookup(p->val.tbl, p->key);
+                p->key = temp;
+            } else {
+                p->key = null_var;
+                p->val = null_var;
+            }
+        } else {
+            assert(p->scope.type == TYPE_TBL);
+            p->val = tbl_lookup(p->scope.tbl, p->key);
+            p->key = p->scope;
+        }
+    } else {
+        if (p->has_val) {
+            p->key = p->scope;
+        } else {
+            p->key = null_var;
+            p->val = null_var;
+        }
+    }
+
+    p->has_val = 1;
+    p->has_key = 1;
+}
+
 static inline void subparse(struct parse *p) {
 #ifndef NDEBUG
     const char *s = p->code;
     d_poke_stack();
 #endif
 
-    while (!parsers[*p->code & 0x7f](p));
+    while (!parsers[*p->code & 0x7f](p) &&
+           p->code < p->end             );
 
 #ifndef NDEBUG
     printf("|%.*s| => ", p->code-s, s);
@@ -147,7 +180,8 @@ static inline void subskip(struct parse *p) {
     const char *s = p->code;
 #endif
 
-    while (!skippers[*p->code & 0x7f](p));
+    while (!skippers[*p->code & 0x7f](p) &&
+           p->code < p->end              );
 
 #ifndef NDEBUG
     printf("skipping |%.*s|\n", p->code-s, s);
@@ -156,9 +190,11 @@ static inline void subskip(struct parse *p) {
 
 
 static int apply_block(struct parse *p) {
-    var_t args = tbl_create(2);
+    presolve_fn(p);
 
-    presolve_key(p);
+    S_ASSERT(p->val.type == TYPE_FN || p->val.type == TYPE_BFN);
+
+    var_t args = tbl_create(2);
     tbl_assign(args.tbl, str_var("this"), p->val);
 
     {   var_t block;
@@ -173,13 +209,11 @@ static int apply_block(struct parse *p) {
         block = fn_create(block, p->scope);
         tbl_assign(args.tbl, str_var("block"), block);
     }
-    
-    presolve(p);
 
-    S_ASSERT(p->val.type == TYPE_FN || p->val.type == TYPE_BFN);
-
-    var_print(args);
     p->val = fn_call(p->val, args);
+
+    p->key = null_var;
+    p->has_key = 0;
     return 1;
 }
 
@@ -198,20 +232,77 @@ static var_t v_mul(var_t args) {
     return num_var(var_num(a) * var_num(b));
 }
 
+static var_t v_fn_split(var_t args) {
+    var_t fn1 = tbl_lookup(args.tbl, num_var(0));
+    var_t code1 = fn1.fn->code;
+    var_t word = tbl_lookup(args.tbl, num_var(1));
+
+    if ( fn1.type != TYPE_FN || 
+         (word.type != TYPE_STR && word.type != TYPE_CSTR) )
+        return null_var;
+
+    struct parse p = {
+        .target = word,
+
+        .meta = code1.meta,
+        .start = var_str(code1) - code1.off,
+        .code = var_str(code1),
+        .end = var_str(code1) + code1.len,
+
+        .skip_to = 1,
+    };
+
+    subskip(&p);
+
+    var_t res = tbl_create(1);
+    tbl_assign(res.tbl, num_var(0), fn1);
+
+    if (!p.skip_to) {
+        var_t code2;
+
+        fn1.fn->code.len = p.code - (p.start + code1.off);
+
+        code2.meta = p.meta;
+        code2.off = (uint16_t)(p.code - p.start + word.len);
+        code2.len = (uint16_t)(p.end - (p.code + word.len));
+
+        var_t fn2 = fn_create(code2, fn1.fn->closure);
+        tbl_assign(res.tbl, num_var(1), fn2);
+    }
+
+    return res;
+}
+
 static var_t v_if_true(var_t args) {
     var_t doif = tbl_lookup(args.tbl, str_var("block"));
-    printf("!true ");
-    var_print(doif);
-    printf("!\n");
+
+    if (doif.type != TYPE_FN)
+        return null_var;
+
+    tbl_assign(args.tbl, num_var(0), doif);
+    tbl_assign(args.tbl, num_var(1), str_var("else"));
+
+    var_t res = tbl_lookup(v_fn_split(args).tbl, num_var(0));
+
+    if (res.type == TYPE_FN)
+        return fn_call(res, tbl_create(0));
 
     return null_var;
 }
 
 static var_t v_if_false(var_t args) {
     var_t doif = tbl_lookup(args.tbl, str_var("block"));
-    printf("!false ");
-    var_print(doif);
-    printf("!\n");
+
+    if (doif.type != TYPE_FN)
+        return null_var;
+
+    tbl_assign(args.tbl, num_var(0), doif);
+    tbl_assign(args.tbl, num_var(1), str_var("else"));
+
+    var_t res = tbl_lookup(v_fn_split(args).tbl, num_var(1));
+
+    if (res.type == TYPE_FN)
+        return fn_call(res, tbl_create(0));
 
     return null_var;
 }
@@ -236,7 +327,7 @@ var_t parse_single(var_t input) {
         .ops = ops.tbl,
 
         .meta = input.meta,
-        .start = var_str(input),
+        .start = var_str(input) - input.off,
         .code = var_str(input),
         .end = var_str(input) + input.len,
     };
@@ -268,7 +359,7 @@ var_t vparse(var_t code, var_t scope) {
         .target = scope,
 
         .meta = code.meta,
-        .start = var_str(code),
+        .start = var_str(code) - code.off,
         .code = var_str(code),
         .end = var_str(code) + code.len,
     };
@@ -299,6 +390,7 @@ static int space_parse(struct parse *p) {
         p->code = s;
         return 1;
     } else {
+        p->pre_space = p->code - s;
         return 0;
     }
 }
@@ -505,15 +597,10 @@ static int op_parse(struct parse *p) {
     if (p->in_op && p->has_val && p->op_space == 0)
         return 1;
 
-    var_t op;
 
-    int in_op = p->in_op;
     unsigned int op_space = p->op_space;
 
-    var_t lval;
-    var_t lkey;
-    tbl_t *ltbl;
-    void (*tbl_op)(tbl_t*, var_t, var_t) = 0;
+    var_t op;
 
     {   const char *s = p->code;
 
@@ -523,7 +610,21 @@ static int op_parse(struct parse *p) {
         op.meta = p->meta;
         op.off = (uint16_t)(s - p->start);
         op.len = (uint16_t)(p->code - s);
+
+        while (parsers[*p->code & 0x7f] == space_parse ||
+               parsers[*p->code & 0x7f] == term_parse)
+            p->code++;
+
+        p->op_space = p->code - (s + op.len);
+
+        if (!p->in_op && p->op_space < p->pre_space) {
+            p->code = s;
+            p->op_space = op_space;
+
+            return apply_block(p);
+        }
     }
+
 
     while (1) {
         var_t op_v = tbl_lookup(p->ops, op);
@@ -538,6 +639,9 @@ static int op_parse(struct parse *p) {
 
         S_ASSERT(op.len > 0);
     }
+
+
+    void (*tbl_op)(tbl_t*, var_t, var_t) = 0;
 
     if (op.meta == ASSIGN_OP) {
         tbl_op = tbl_assign;
@@ -561,21 +665,15 @@ static int op_parse(struct parse *p) {
         p->code++;
         p->op_space = MAX_SPACE;
 
-    } else {
-        const char *s = p->code;
-
-        while (parsers[*p->code & 0x7f] == space_parse ||
-               parsers[*p->code & 0x7f] == term_parse)
-            p->code++;
-
-        p->op_space = p->code - s;
     }
 
-    lkey = p->key;
-    ltbl = p->val.tbl;
+    int in_op = p->in_op;
+
+    var_t lkey = p->key;
+    tbl_t *ltbl = p->val.tbl;
 
     presolve(p);
-    lval = p->val;
+    var_t lval = p->val;
     p->in_op = 1;
 
     if ( (op.meta == AND_OP && p->val.type == TYPE_NULL) ||
@@ -619,6 +717,7 @@ op_done:
     return 0;
 }
 
+// for blocks with single code block
 static void s_block_parse(struct parse *p) {
     int in_paren = p->in_paren;
     int in_op = p->in_op;
@@ -635,13 +734,14 @@ static void s_block_parse(struct parse *p) {
     p->ended = 0;
 }
 
+// for blocks with multiple independent code blocks
 static void m_block_parse(struct parse *p) {
     int in_paren = p->in_paren;
     int in_op = p->in_op;
     int op_space = p->op_space;
+    double n = p->n;
     p->in_paren = 0;
     p->in_op = 0;
-
     p->n = 0.0;
 
     while (!p->ended) {
@@ -664,9 +764,11 @@ static void m_block_parse(struct parse *p) {
     p->in_paren = in_paren;
     p->in_op = in_op;
     p->op_space = op_space;
+    p->n = n;
     p->ended = 0;
 };
 
+// for blocks with multiple dependent code blocks
 static void b_block_parse(struct parse *p) {
     int in_paren = p->in_paren;
     int in_op = p->in_op;
@@ -693,20 +795,21 @@ static int paren_parse(struct parse *p) {
     p->code++;
 
     if (p->has_key || p->has_val) {
-        presolve_key(p);
+        presolve_fn(p);
+
+        S_ASSERT(p->val.type == TYPE_FN || p->val.type == TYPE_BFN);
+        var_t fn = p->val;
 
         var_t target = p->target;
         p->target = tbl_create(1);
-        tbl_assign(p->target.tbl, str_var("this"), p->val);
-
-        presolve(p);
-        var_t fn = p->val;
+        tbl_assign(p->target.tbl, str_var("this"), p->key);
 
         p->val = null_var;
         p->has_val = 0;
-        m_block_parse(p);
+        p->key = null_var;
+        p->has_key = 0;
 
-        S_ASSERT(fn.type == TYPE_FN || fn.type == TYPE_BFN);
+        m_block_parse(p);
 
         p->val = fn_call(fn, p->val);
         p->target = target;
@@ -945,6 +1048,21 @@ static int op_skip(struct parse *p) {
     return 0;
 }
 
+static int word_skip(struct parse *p) {
+    if (p->skip_to) {
+        assert( p->target.type == TYPE_STR ||
+                p->target.type == TYPE_CSTR );
+
+        if ( p->end - p->code > p->target.len &&
+             !memcmp(p->code, var_str(p->target), p->target.len) ) {
+            p->skip_to = 0;
+            return 1;
+        }
+    }
+
+    p->code++;
+    return 0;
+}
 
 int (*skippers [128])(struct parse *) = {
     end_parse,      // 0x00     // \0
@@ -1012,64 +1130,64 @@ int (*skippers [128])(struct parse *) = {
     op_skip,        // 0x3e     // >
     op_skip,        // 0x3f     // ?
     skip,           // 0x40     // @
-    skip,           // 0x41     // A
-    skip,           // 0x42     // B
-    skip,           // 0x43     // C
-    skip,           // 0x44     // D
-    skip,           // 0x45     // E
-    skip,           // 0x46     // F
-    skip,           // 0x47     // G
-    skip,           // 0x48     // H
-    skip,           // 0x49     // I
-    skip,           // 0x4a     // J
-    skip,           // 0x4b     // K
-    skip,           // 0x4c     // L
-    skip,           // 0x4d     // M
-    skip,           // 0x4e     // N
-    skip,           // 0x4f     // O
-    skip,           // 0x50     // P
-    skip,           // 0x51     // Q
-    skip,           // 0x52     // R
-    skip,           // 0x53     // S
-    skip,           // 0x54     // T
-    skip,           // 0x55     // U
-    skip,           // 0x56     // V
-    skip,           // 0x57     // W
-    skip,           // 0x58     // X
-    skip,           // 0x59     // Y
-    skip,           // 0x5a     // Z
+    word_skip,      // 0x41     // A
+    word_skip,      // 0x42     // B
+    word_skip,      // 0x43     // C
+    word_skip,      // 0x44     // D
+    word_skip,      // 0x45     // E
+    word_skip,      // 0x46     // F
+    word_skip,      // 0x47     // G
+    word_skip,      // 0x48     // H
+    word_skip,      // 0x49     // I
+    word_skip,      // 0x4a     // J
+    word_skip,      // 0x4b     // K
+    word_skip,      // 0x4c     // L
+    word_skip,      // 0x4d     // M
+    word_skip,      // 0x4e     // N
+    word_skip,      // 0x4f     // O
+    word_skip,      // 0x50     // P
+    word_skip,      // 0x51     // Q
+    word_skip,      // 0x52     // R
+    word_skip,      // 0x53     // S
+    word_skip,      // 0x54     // T
+    word_skip,      // 0x55     // U
+    word_skip,      // 0x56     // V
+    word_skip,      // 0x57     // W
+    word_skip,      // 0x58     // X
+    word_skip,      // 0x59     // Y
+    word_skip,      // 0x5a     // Z
     brace_skip,     // 0x5b     // [
     op_skip,        /* 0x5c     // \ */
     end_parse,      // 0x5d     // ]
     op_skip,        // 0x5e     // ^
-    skip,           // 0x5f     // _
+    word_skip,      // 0x5f     // _
     comm_parse,     // 0x60     // `
-    skip,           // 0x61     // a
-    skip,           // 0x62     // b
-    skip,           // 0x63     // c
-    skip,           // 0x64     // d
-    skip,           // 0x65     // e
-    skip,           // 0x66     // f
-    skip,           // 0x67     // g
-    skip,           // 0x68     // h
-    skip,           // 0x69     // i
-    skip,           // 0x6a     // j
-    skip,           // 0x6b     // k
-    skip,           // 0x6c     // l
-    skip,           // 0x6d     // m
-    skip,           // 0x6e     // n
-    skip,           // 0x6f     // o
-    skip,           // 0x70     // p
-    skip,           // 0x71     // q
-    skip,           // 0x72     // r
-    skip,           // 0x73     // s
-    skip,           // 0x74     // t
-    skip,           // 0x75     // u
-    skip,           // 0x76     // v
-    skip,           // 0x77     // w
-    skip,           // 0x78     // x
-    skip,           // 0x79     // y
-    skip,           // 0x7a     // z
+    word_skip,      // 0x61     // a
+    word_skip,      // 0x62     // b
+    word_skip,      // 0x63     // c
+    word_skip,      // 0x64     // d
+    word_skip,      // 0x65     // e
+    word_skip,      // 0x66     // f
+    word_skip,      // 0x67     // g
+    word_skip,      // 0x68     // h
+    word_skip,      // 0x69     // i
+    word_skip,      // 0x6a     // j
+    word_skip,      // 0x6b     // k
+    word_skip,      // 0x6c     // l
+    word_skip,      // 0x6d     // m
+    word_skip,      // 0x6e     // n
+    word_skip,      // 0x6f     // o
+    word_skip,      // 0x70     // p
+    word_skip,      // 0x71     // q
+    word_skip,      // 0x72     // r
+    word_skip,      // 0x73     // s
+    word_skip,      // 0x74     // t
+    word_skip,      // 0x75     // u
+    word_skip,      // 0x76     // v
+    word_skip,      // 0x77     // w
+    word_skip,      // 0x78     // x
+    word_skip,      // 0x79     // y
+    word_skip,      // 0x7a     // z
     bracket_skip,   // 0x7b     // {
     op_skip,        // 0x7c     // |
     end_parse,      // 0x7d     // }
