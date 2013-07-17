@@ -12,7 +12,7 @@
 int main() {
     d_set_stack();
 
-    var_t code = str_var("{   +3  +  + 2 +    if(1) .5}\0");
+    var_t code = str_var("{2.1}");
     var_t res, result;
     res = parse_single(code);
 

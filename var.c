@@ -281,7 +281,7 @@ var_t light_repr(var_t *v, int n) {
                     *(str++) = '-';
                 }
 
-                int exp = (int)log10(num);
+                int exp = floor(log10(num));
                 double digit = pow(10.0, exp);
 
                 int expform = (exp > 14 || exp < -13);
@@ -295,11 +295,12 @@ var_t light_repr(var_t *v, int n) {
 
                 int i, length = expform ? 10 : 15;
 
-                for (i=0; (num || digit >= 1.0) && i<length; i++) {
+                for (i=0; (num > 0.0 || digit >= 1.0) && i<length; i++) {
                     if (digit == 0.1)
                         *(str++) = '.';
 
-                    int d = (int)(num / digit);
+                    int d = floor(num / digit);
+                    printf("d %d = n %f / d %f\n", d, num, digit);
                     *(str++) = '0' + d;
 
                     num -= d * digit;
