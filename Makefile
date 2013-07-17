@@ -5,13 +5,14 @@ CFLAGS=-O0 -g3 -gdwarf-2 -ggdb -Wall -lm
 #CFLAGS=-Os -Wall -lm
 
 
-V_O=main.o  \
-    var.o   \
-    num.o   \
-    str.o   \
-    tbl.o   \
-    fn.o    \
-    parse.o \
+V_O=main.o    \
+    var.o     \
+    num.o     \
+    str.o     \
+    tbl.o     \
+    fn.o      \
+    parse.o   \
+    builtin.o \
     vdbg.o
         
 

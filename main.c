@@ -12,7 +12,7 @@
 int main() {
     d_set_stack();
 
-    var_t code = str_var("{2.1}");
+    var_t code = str_var("{[k,v:[1,2,3,4,5]]}");
     var_t res, result;
     res = parse_single(code);
 

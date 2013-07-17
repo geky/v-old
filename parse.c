@@ -1,4 +1,5 @@
 #include "parse.h"
+#include "builtin.h"
 
 #include "num.h"
 #include "str.h"
@@ -218,104 +219,6 @@ static int apply_block(struct parse *p) {
 }
 
 
-static var_t v_add(var_t args) {
-    var_t a = tbl_lookup(args.tbl, num_var(0));
-    var_t b = tbl_lookup(args.tbl, num_var(1));
-
-    return num_var(var_num(a) + var_num(b));
-}
-
-static var_t v_mul(var_t args) {
-    var_t a = tbl_lookup(args.tbl, num_var(0));
-    var_t b = tbl_lookup(args.tbl, num_var(1));
-
-    return num_var(var_num(a) * var_num(b));
-}
-
-static var_t v_fn_split(var_t args) {
-    var_t fn1 = tbl_lookup(args.tbl, num_var(0));
-    var_t code1 = fn1.fn->code;
-    var_t word = tbl_lookup(args.tbl, num_var(1));
-
-    if ( fn1.type != TYPE_FN || 
-         (word.type != TYPE_STR && word.type != TYPE_CSTR) )
-        return null_var;
-
-    struct parse p = {
-        .target = word,
-
-        .meta = code1.meta,
-        .start = var_str(code1) - code1.off,
-        .code = var_str(code1),
-        .end = var_str(code1) + code1.len,
-
-        .skip_to = 1,
-    };
-
-    subskip(&p);
-
-    var_t res = tbl_create(1);
-    tbl_assign(res.tbl, num_var(0), fn1);
-
-    if (!p.skip_to) {
-        var_t code2;
-
-        fn1.fn->code.len = p.code - (p.start + code1.off);
-
-        code2.meta = p.meta;
-        code2.off = (uint16_t)(p.code - p.start + word.len);
-        code2.len = (uint16_t)(p.end - (p.code + word.len));
-
-        var_t fn2 = fn_create(code2, fn1.fn->closure);
-        tbl_assign(res.tbl, num_var(1), fn2);
-    }
-
-    return res;
-}
-
-static var_t v_if_true(var_t args) {
-    var_t doif = tbl_lookup(args.tbl, str_var("block"));
-
-    if (doif.type != TYPE_FN)
-        return null_var;
-
-    tbl_assign(args.tbl, num_var(0), doif);
-    tbl_assign(args.tbl, num_var(1), str_var("else"));
-
-    var_t res = tbl_lookup(v_fn_split(args).tbl, num_var(0));
-
-    if (res.type == TYPE_FN)
-        return fn_call(res, tbl_create(0));
-
-    return null_var;
-}
-
-static var_t v_if_false(var_t args) {
-    var_t doif = tbl_lookup(args.tbl, str_var("block"));
-
-    if (doif.type != TYPE_FN)
-        return null_var;
-
-    tbl_assign(args.tbl, num_var(0), doif);
-    tbl_assign(args.tbl, num_var(1), str_var("else"));
-
-    var_t res = tbl_lookup(v_fn_split(args).tbl, num_var(1));
-
-    if (res.type == TYPE_FN)
-        return fn_call(res, tbl_create(0));
-
-    return null_var;
-}
-
-static var_t v_if(var_t args) {
-    var_t a = tbl_lookup(args.tbl, num_var(0));
-
-    if (a.type != TYPE_NULL)
-        return fn_var(v_if_true);
-    else
-        return fn_var(v_if_false);
-}
-
 var_t parse_single(var_t input) {
     if (input.type != TYPE_STR && input.type != TYPE_CSTR)
         return null_var;
@@ -375,6 +278,49 @@ var_t vparse(var_t code, var_t scope) {
     presolve(&p);
     return p.val;
 }
+
+
+var_t v_fn_split(var_t args) {
+    var_t fn1 = tbl_lookup(args.tbl, num_var(0));
+    var_t code1 = fn1.fn->code;
+    var_t word = tbl_lookup(args.tbl, num_var(1));
+
+    if ( fn1.type != TYPE_FN || 
+         (word.type != TYPE_STR && word.type != TYPE_CSTR) )
+        return null_var;
+
+    struct parse p = {
+        .target = word,
+
+        .meta = code1.meta,
+        .start = var_str(code1) - code1.off,
+        .code = var_str(code1),
+        .end = var_str(code1) + code1.len,
+
+        .skip_to = 1,
+    };
+
+    subskip(&p);
+
+    var_t res = tbl_create(1);
+    tbl_assign(res.tbl, num_var(0), fn1);
+
+    if (!p.skip_to) {
+        var_t code2;
+
+        fn1.fn->code.len = p.code - (p.start + code1.off);
+
+        code2.meta = p.meta;
+        code2.off = (uint16_t)(p.code - p.start + word.len);
+        code2.len = (uint16_t)(p.end - (p.code + word.len));
+
+        var_t fn2 = fn_create(code2, fn1.fn->closure);
+        tbl_assign(res.tbl, num_var(1), fn2);
+    }
+
+    return res;
+}
+
 
 static int bad_parse(struct parse *p) {
     S_ASSERT(0);
