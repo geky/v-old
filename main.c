@@ -12,12 +12,13 @@
 int main() {
     d_set_stack();
 
-    var_t code = str_var("{3 +      +  if(1) 2       }\0");
+    var_t code = str_var("{   +3  +  + 2 +    if(1) .5}\0");
     var_t res, result;
     res = parse_single(code);
 
     result = light_repr(&res, 1);
-    printf("Result: %.*s\n\n", result.len, var_str(result));
+    printf("Result: %.*s\n", result.len, var_str(result));
+    printf("       [0x%llx]\n\n", result.bits);
 
     d_print_space();
 

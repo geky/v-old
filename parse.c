@@ -505,8 +505,8 @@ static int num_parse(struct parse *p) {
         i -= (i >= 'a') ? ('a' - 10) :
              (i >= 'A') ? ('A' - 10) : '0';
 
-        if (i >= base.radix) { 
-            if (i == '.') {
+        if (i >= base.radix) {
+            if (i == 254) { // '.' applied to the above operation
                 break;
             } else {
                 p->code--;
@@ -520,8 +520,7 @@ static int num_parse(struct parse *p) {
         p->val.num += i;
     }
 
-    p->code++; // hit a period
-    scale = 1.0;
+    scale = 1.0; // hit a period
 
     while (1) {
         i = *p->code++;
@@ -617,11 +616,19 @@ static int op_parse(struct parse *p) {
 
         p->op_space = p->code - (s + op.len);
 
-        if (!p->in_op && p->op_space < p->pre_space) {
-            p->code = s;
-            p->op_space = op_space;
+        if (p->op_space < p->pre_space) {
+            if (p->has_key || p->has_val) {
+                p->code = s - p->pre_space;
+                p->op_space = op_space;
 
-            return apply_block(p);
+                return apply_block(p);
+
+            } else if (*s == '.') { 
+                p->code = s;
+                p->op_space = op_space;
+
+                return num_parse(p);
+            }
         }
     }
 
