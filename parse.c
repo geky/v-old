@@ -19,7 +19,7 @@
 #define HIDE_FLAG(h) ((var_t){.meta=(h)})
 
 #define S_ASSERT(a) if (!(a)) {              \
-                        printf("Failed!: " #a "\n"); \
+                        printf("S ASSERT FAIL %d: " #a "\n", __LINE__); \
                         p->val = null_var;   \
                         p->ended = 1;        \
                         p->has_val = 1;      \
@@ -218,11 +218,12 @@ var_t parse_single(var_t input) {
 
     tbl_assign(p.scope.tbl, str_var("+"), fn_var(v_add));
     tbl_assign(p.scope.tbl, str_var("*"), fn_var(v_mul));
-    tbl_assign(p.scope.tbl, str_var(":"), HIDE_FLAG(ASSIGN_OP));
-    tbl_assign(p.scope.tbl, str_var("="), HIDE_FLAG(SET_OP));
-    tbl_assign(p.scope.tbl, str_var("."), HIDE_FLAG(DOT_OP));
-    tbl_assign(p.scope.tbl, str_var("||"), HIDE_FLAG(OR_OP));
-    tbl_assign(p.scope.tbl, str_var("&&"), HIDE_FLAG(AND_OP));
+    tbl_assign(p.scope.tbl, str_var(">"), fn_var(v_gt));
+    tbl_assign(p.scope.tbl, str_var(":"), v_assign);
+    tbl_assign(p.scope.tbl, str_var("="), v_set);
+    tbl_assign(p.scope.tbl, str_var("."), v_dot);
+    tbl_assign(p.scope.tbl, str_var("||"), v_or);
+    tbl_assign(p.scope.tbl, str_var("&&"), v_and);
 
     tbl_assign(p.scope.tbl, str_var("if"), fn_var(v_if));
     tbl_assign(p.scope.tbl, str_var("while"), fn_var(v_while));
@@ -483,78 +484,79 @@ static int op_parse(struct parse *p) {
     unsigned int op_space = p->op_space;
 
     var_t op;
+    void (*tbl_op)(tbl_t*, var_t, var_t) = 0;
+
 
     {   const char *s = p->code;
+        var_t op_k;
 
         while (parsers[*p->code & 0x7f] == op_parse)
             p->code++;
 
-        op.meta = p->meta;
-        op.off = (uint16_t)(s - p->start);
-        op.len = (uint16_t)(p->code - s);
+        op_k.meta = p->meta;
+        op_k.off = (uint16_t)(s - p->start);
+        op_k.len = (uint16_t)(p->code - s);
 
-        while (parsers[*p->code & 0x7f] == space_parse ||
-               parsers[*p->code & 0x7f] == term_parse)
+        while (1) {
+            op = tbl_lookup(p->scope.tbl, op_k);
+
+            if (op.meta)
+                break;
+
+            op_k.len--;
+            p->code--;
+
+            S_ASSERT(op_k.len > 0);
+        }
+
+        if (op.meta == ASSIGN_OP) {
+            tbl_op = tbl_assign;
+            presolve_key(p);
+            p->op_space = MAX_SPACE;
+
+        } else if (op.meta == SET_OP) {
+            tbl_op = tbl_set;
+            presolve_key(p);
+            p->op_space = MAX_SPACE;
+
+        } else if (*p->code == ':') {
+            tbl_op = tbl_assign;
+            presolve_key(p);
             p->code++;
+            p->op_space = MAX_SPACE;
 
-        p->op_space = p->code - (s + op.len);
+        } else if (*p->code == '=') {
+            tbl_op = tbl_set;
+            presolve_key(p);
+            p->code++;
+            p->op_space = MAX_SPACE;
 
-        if (p->op_space < p->pre_space) {
-            if (p->has_key || p->has_val) {
-                p->code = s - p->pre_space;
-                p->op_space = op_space;
+        } else {
+            while (parsers[*p->code & 0x7f] == space_parse ||
+                   parsers[*p->code & 0x7f] == term_parse)
+                p->code++;
 
-                return apply_block(p);
+            p->op_space = p->code - (s + op_k.len);
 
-            } else if (*s == '.') { 
-                p->code = s;
-                p->op_space = op_space;
+            printf("!%d %d!\n", p->op_space, p->pre_space);
 
-                return num_parse(p);
+            if (p->op_space < p->pre_space) {
+                if (p->has_key || p->has_val) {
+                    p->code = s - p->pre_space;
+                    p->op_space = op_space;
+
+                    return apply_block(p);
+
+                } else if (*s == '.') { 
+                    p->code = s;
+                    p->op_space = op_space;
+
+                    return num_parse(p);
+                }
             }
         }
     }
 
-
-    while (1) {
-        var_t op_v = tbl_lookup(p->scope.tbl, op);
-
-        if (op_v.meta) {
-            op = op_v;
-            break;
-        }
-
-        op.len--;
-        p->code--;
-
-        S_ASSERT(op.len > 0);
-    }
-
-
-    void (*tbl_op)(tbl_t*, var_t, var_t) = 0;
-
-    if (op.meta == ASSIGN_OP) {
-        tbl_op = tbl_assign;
-        presolve_key(p);
-        p->op_space = MAX_SPACE;
-
-    } else if (op.meta == SET_OP) {
-        tbl_op = tbl_set;
-        presolve_key(p);
-        p->op_space = MAX_SPACE;
-
-    } else if (*p->code == ':') {
-        tbl_op = tbl_assign;
-        presolve_key(p);
-        p->code++;
-        p->op_space = MAX_SPACE;
-
-    } else if (*p->code == '=') {
-        tbl_op = tbl_set;
-        presolve_key(p);
-        p->code++;
-        p->op_space = MAX_SPACE;
-    }
 
     int in_op = p->in_op;
 

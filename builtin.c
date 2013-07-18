@@ -69,15 +69,11 @@ var_t v_while(var_t args) {
     }
 
     while (1) {
-        var_t res = fn_call(pred, null_var);
-
-        var_print(res);
-
-        if (res.type == TYPE_NULL)
+        var_t c = fn_call(pred, null_var);
+        if (c.type == TYPE_NULL)
             break;
 
         fn_call(code, null_var);
-        break;
     }
 
     return null_var;
@@ -106,4 +102,11 @@ var_t v_mul(var_t args) {
     var_t b = tbl_lookup(args.tbl, num_var(1));
 
     return num_var(var_num(a) * var_num(b));
+}
+
+var_t v_gt(var_t args) {
+    var_t a = tbl_lookup(args.tbl, num_var(0));
+    var_t b = tbl_lookup(args.tbl, num_var(1));
+
+    return var_num(a) > var_num(b) ? num_var(1) : null_var;
 }
