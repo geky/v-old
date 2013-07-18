@@ -35,13 +35,12 @@ var_t fn_call(var_t vfn, var_t args) {
         case TYPE_FN: {
             fn_t *fn = vfn.fn;
 
-            // minimum scope is [args, this, super]
-            var_t scope = tbl_create(3); 
-            tbl_assign(scope.tbl, str_var("args"), args);
+            var_t scope = tbl_create(1); 
             tbl_assign(scope.tbl, str_var("super"), fn->closure);
 
             for_tbl(key, val, args.tbl, {
                 var_t temp = tbl_lookup(fn->args.tbl, key);
+                var_print(temp);
 
                 if (temp.meta)
                     tbl_assign(scope.tbl, temp, val);
@@ -49,6 +48,8 @@ var_t fn_call(var_t vfn, var_t args) {
 
             printf("calling ");
             var_print(fn->code);
+            printf("\nwith ");
+            var_print(scope);
             printf("\n");
 
             return vparse(fn->code, scope);

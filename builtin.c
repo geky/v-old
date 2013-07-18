@@ -50,17 +50,20 @@ var_t v_if(var_t args) {
 }
 
 var_t v_while(var_t args) {
-    var_t code = tbl_lookup(args.tbl, num_var(1));
     var_t pred = tbl_lookup(args.tbl, str_var("parameters"));
+    var_t code = tbl_lookup(args.tbl, str_var("code"));
 
-    printf("ah\n");
+    if (pred.type != TYPE_FN || pred.type != TYPE_BFN)
+        return null_var;
 
     if (code.type != TYPE_FN && code.type != TYPE_BFN) {
-        var_t scope = tbl_create(1);
+        var_t scope = tbl_create(2);
         tbl_assign(scope.tbl, str_var("p"), pred);
         tbl_assign(scope.tbl, str_var("w"), fn_var(v_while));
+        tbl_assign(scope.tbl, str_var("super"), tbl_lookup(args.tbl, str_var("this")));
 
-        var_t res = fn_create(str_var("w(_w:p, block)\0"), scope);
+        var_t res = fn_create(str_var("[while,parameters:p,1:b] `w(parameters:p, )\0"), scope);
+        tbl_assign(res.fn->args.tbl, str_var("block"), str_var("b"));
 
         return res;
     }

@@ -73,23 +73,24 @@ typedef struct var {
 
 // macros for creating literal vars in c
 
-#define null_var   ((var_t){{0}})
+#define null_var     ((var_t){{0}})
+#define null_flag(n) ((var_t){.meta=(n << 3)})
 
-#define num_var(n) ((var_t){{TYPE_NUM | (~0x7 & ((var_t){.num=(n)}).bits)}})
-#define nan_var    num_var(NAN)
-#define inf_var    num_var(INFINITY)
+#define num_var(n)   ((var_t){{TYPE_NUM | (~0x7 & ((var_t){.num=(n)}).bits)}})
+#define nan_var      num_var(NAN)
+#define inf_var      num_var(INFINITY)
 
-#define str_var(n) ({ const static struct {                  \
-                        ref_t __attribute__((aligned(8))) r; \
-                        char s[sizeof(n)-1];                 \
-                      } str = { 1, {(n)} };                  \
-                                                             \
-                      ((var_t){{TYPE_CSTR |                  \
-                        (~0x7 & ((var_t){                    \
-                          .ref = (ref_t*)&str,               \
-                          .off = 0,                          \
-                          .len = sizeof(n)-1                 \
-                        }).bits)    }});     })
+#define str_var(n)   ({ const static struct {                  \
+                          ref_t __attribute__((aligned(8))) r; \
+                          char s[sizeof(n)-1];                 \
+                        } str = { 1, {(n)} };                  \
+                                                               \
+                        ((var_t){{TYPE_CSTR |                  \
+                          (~0x7 & ((var_t){                    \
+                            .ref = (ref_t*)&str,               \
+                            .off = 0,                          \
+                            .len = sizeof(n)-1                 \
+                          }).bits)    }});     })
 
 #define fn_var(n)  ((var_t){{TYPE_BFN | (~0x7 & ((var_t){.bfn=(n)}).bits)}})
 
