@@ -49,6 +49,34 @@ var_t v_if(var_t args) {
         return fn_var(v_if_false);
 }
 
+var_t v_while(var_t args) {
+    var_t code = tbl_lookup(args.tbl, num_var(1));
+    var_t pred = tbl_lookup(args.tbl, str_var("parameters"));
+
+    printf("ah\n");
+
+    if (code.type != TYPE_FN && code.type != TYPE_BFN) {
+        var_t scope = tbl_create(1);
+        tbl_assign(scope.tbl, str_var("p"), pred);
+        tbl_assign(scope.tbl, str_var("w"), fn_var(v_while));
+
+        var_t res = fn_create(str_var("w(_w:p, block)\0"), scope);
+
+        return res;
+    }
+
+    return null_var;
+}
+
+var_t v_for(var_t args) {
+    var_t p = tbl_lookup(args.tbl, str_var("parameters"));
+    tbl_assign(args.tbl, num_var(0), p);
+
+    printf("!");
+    var_print(v_fn_token(args));
+    printf("!\n");
+    return null_var;
+}
 
 
 var_t v_add(var_t args) {

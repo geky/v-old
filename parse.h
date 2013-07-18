@@ -9,8 +9,11 @@ var_t parse_single(var_t input);
 var_t vparse(var_t code, var_t scope);
 
 
-// builtin function used both internally and externally 
-// to split code on keywords
+/** builtin function used both internally and externally **/
+
+// splits code on keywords
 var_t v_fn_split(var_t args);
+// grabs the next token string
+var_t v_fn_token(var_t args);
 
 #endif

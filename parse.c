@@ -32,16 +32,6 @@ enum {
     SET_OP        = ( 3<<3),
     AND_OP        = ( 4<<3),
     OR_OP         = ( 5<<3),
-
-    IF_ST         = ( 8<<3),
-    ELSE_ST       = ( 9<<3),
-    SWITCH_ST     = (10<<3),
-    FOR_ST        = (11<<3),
-    WHILE_ST      = (12<<3),
-    FN_ST         = (13<<3),
-    RETURN_ST     = (14<<3),
-    BREAK_ST      = (15<<3),
-    CONTINUE_ST   = (16<<3),
 };
 
 struct parse {
@@ -247,6 +237,8 @@ var_t parse_single(var_t input) {
 
     tbl_assign(p.scope.tbl, str_var("ops"), ops);
     tbl_assign(p.scope.tbl, str_var("if"), fn_var(v_if));
+    tbl_assign(p.scope.tbl, str_var("while"), fn_var(v_while));
+    tbl_assign(p.scope.tbl, str_var("for"), fn_var(v_for));
 
     subparse(&p);
     presolve(&p);
@@ -279,47 +271,6 @@ var_t vparse(var_t code, var_t scope) {
     return p.val;
 }
 
-
-var_t v_fn_split(var_t args) {
-    var_t fn1 = tbl_lookup(args.tbl, num_var(0));
-    var_t code1 = fn1.fn->code;
-    var_t word = tbl_lookup(args.tbl, num_var(1));
-
-    if ( fn1.type != TYPE_FN || 
-         (word.type != TYPE_STR && word.type != TYPE_CSTR) )
-        return null_var;
-
-    struct parse p = {
-        .target = word,
-
-        .meta = code1.meta,
-        .start = var_str(code1) - code1.off,
-        .code = var_str(code1),
-        .end = var_str(code1) + code1.len,
-
-        .skip_to = 1,
-    };
-
-    subskip(&p);
-
-    var_t res = tbl_create(1);
-    tbl_assign(res.tbl, num_var(0), fn1);
-
-    if (!p.skip_to) {
-        var_t code2;
-
-        fn1.fn->code.len = p.code - (p.start + code1.off);
-
-        code2.meta = p.meta;
-        code2.off = (uint16_t)(p.code - p.start + word.len);
-        code2.len = (uint16_t)(p.end - (p.code + word.len));
-
-        var_t fn2 = fn_create(code2, fn1.fn->closure);
-        tbl_assign(res.tbl, num_var(1), fn2);
-    }
-
-    return res;
-}
 
 
 static int bad_parse(struct parse *p) {
@@ -533,8 +484,6 @@ static int word_parse(struct parse *p) {
     p->key.len = (uint16_t)(p->code - s);
     p->has_key = 1;
 
-    
-
     return p->dotted;
 }
 
@@ -740,6 +689,7 @@ static void b_block_parse(struct parse *p) {
     p->in_paren = in_paren;
     p->in_op = in_op;
     p->op_space = op_space;
+
     p->ended = 0;
 }
 
@@ -752,10 +702,20 @@ static int paren_parse(struct parse *p) {
 
         S_ASSERT(p->val.type == TYPE_FN || p->val.type == TYPE_BFN);
         var_t fn = p->val;
+        var_t pmtrs;
+
+        {   var_t code;
+            code.meta = p->meta;
+            code.off = p->code - p->start;
+            code.len = 0;
+
+            pmtrs = fn_create(code, p->scope);
+        }
 
         var_t target = p->target;
         p->target = tbl_create(1);
         tbl_assign(p->target.tbl, str_var("this"), p->key);
+        tbl_assign(p->target.tbl, str_var("parameters"), pmtrs);
 
         p->val = null_var;
         p->has_val = 0;
@@ -763,6 +723,8 @@ static int paren_parse(struct parse *p) {
         p->has_key = 0;
 
         m_block_parse(p);
+
+        pmtrs.fn->code.len = p->code - var_str(pmtrs);
 
         p->val = fn_call(fn, p->val);
         p->target = target;
@@ -814,7 +776,8 @@ static int bracket_parse(struct parse *p) {
     p->target = p->scope = tbl_create(1);
     tbl_assign(p->scope.tbl, str_var("super"), scope);
 
-    b_block_parse(p); 
+    b_block_parse(p);
+
     p->target = target;
     p->scope = scope;
 
@@ -1147,3 +1110,80 @@ int (*skippers [128])(struct parse *) = {
     op_skip,        // 0x7e     // ~
     skip,           // 0x7f     // \x7f
 };
+
+
+var_t v_fn_split(var_t args) {
+    var_t fn1 = tbl_lookup(args.tbl, num_var(0));
+    var_t code1 = fn1.fn->code;
+    var_t word = tbl_lookup(args.tbl, num_var(1));
+
+    if ( fn1.type != TYPE_FN || 
+         (word.type != TYPE_STR && word.type != TYPE_CSTR) )
+        return null_var;
+
+    struct parse p = {
+        .target = word,
+
+        .meta = code1.meta,
+        .start = var_str(code1) - code1.off,
+        .code = var_str(code1),
+        .end = var_str(code1) + code1.len,
+
+        .skip_to = 1,
+    };
+
+    subskip(&p);
+
+    var_t res = tbl_create(1);
+    tbl_assign(res.tbl, num_var(0), fn1);
+
+    if (!p.skip_to) {
+        var_t code2;
+
+        fn1.fn->code.len = p.code - (p.start + code1.off);
+
+        code2.meta = p.meta;
+        code2.off = (uint16_t)(p.code - p.start + word.len);
+        code2.len = (uint16_t)(p.end - (p.code + word.len));
+
+        var_t fn2 = fn_create(code2, fn1.fn->closure);
+        tbl_assign(res.tbl, num_var(1), fn2);
+    }
+
+    return res;
+}
+
+var_t v_fn_token(var_t args) {
+    var_t fn = tbl_lookup(args.tbl, num_var(0));
+
+    if (fn.type != TYPE_FN)
+        return null_var;
+
+    var_t code = fn.fn->code;
+
+    struct parse p = {
+        .meta = code.meta,
+        .start = var_str(code) - code.off,
+        .code = var_str(code),
+        .end = var_str(code) + code.len,
+
+        .skip_to = 1,
+        .target = str_var(""),
+
+        .in_op = 1,
+        .op_space = MAX_SPACE,
+    };
+
+    subskip(&p);    // grab everything before word starts
+    word_parse(&p); // grab word
+    subskip(&p);    // skip to next terminator
+
+    fn.fn->code.off = p.code - p.start;
+    fn.fn->code.len = p.end - p.code;
+    if (p.code < p.end) {
+        fn.fn->code.off++;
+        fn.fn->code.len--;
+    }
+    
+    return p.key;
+}

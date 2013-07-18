@@ -20,8 +20,7 @@ var_t fn_create(var_t code, var_t clos) {
     fn->closure = clos;
     var_inc_ref(clos);
     
-    fn->args = tbl_create(1);
-    tbl_assign(fn->args.tbl, str_var("this"), num_var(1));
+    fn->args = tbl_create(0);
 
     return var;
 }
