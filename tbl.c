@@ -231,13 +231,12 @@ void tbl_set(tbl_t *tbl, var_t key, var_t val) {
         return;
     }
 
-
     while (1) {
         uint32_t j, len = ((uint64_t)1) << link->size;
         uint32_t msize = len - 1;
 
         for (i = hash, j = 0; j < len; i = (i<<2) + i + 1, j++) {
-            entry_t *look = &link->entries[hash & msize];
+            entry_t *look = &link->entries[i & msize];
 
             if (!look->key.meta)
                 break;

@@ -74,7 +74,7 @@ typedef struct var {
 // macros for creating literal vars in c
 
 #define null_var     ((var_t){{0}})
-#define null_flag(n) ((var_t){.meta=(n << 3)})
+#define null_flag(n) ((var_t){.meta=(~0x7 & (n))})
 
 #define num_var(n)   ((var_t){{TYPE_NUM | (~0x7 & ((var_t){.num=(n)}).bits)}})
 #define nan_var      num_var(NAN)

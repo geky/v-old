@@ -26,11 +26,12 @@ var_t fn_create(var_t code, var_t clos) {
 }
 
 var_t fn_call(var_t vfn, var_t args) {
-    assert(args.type == TYPE_TBL);
-
     switch (vfn.type) {
-        case TYPE_BFN: 
-            return vfn.bfn(args);
+        case TYPE_BFN:
+            if (args.type == TYPE_TBL)
+                return vfn.bfn(args);
+            else
+                return vfn.bfn(tbl_create(0));
 
         case TYPE_FN: {
             fn_t *fn = vfn.fn;
@@ -38,13 +39,15 @@ var_t fn_call(var_t vfn, var_t args) {
             var_t scope = tbl_create(1); 
             tbl_assign(scope.tbl, str_var("super"), fn->closure);
 
-            for_tbl(key, val, args.tbl, {
-                var_t temp = tbl_lookup(fn->args.tbl, key);
-                var_print(temp);
+            if (args.type == TYPE_TBL) {
+                for_tbl(key, val, args.tbl, {
+                    var_t temp = tbl_lookup(fn->args.tbl, key);
+                    var_print(temp);
 
-                if (temp.meta)
-                    tbl_assign(scope.tbl, temp, val);
-            });
+                    if (temp.meta)
+                        tbl_assign(scope.tbl, temp, val);
+                });
+            }
 
             printf("calling ");
             var_print(fn->code);

@@ -51,21 +51,33 @@ var_t v_if(var_t args) {
 
 var_t v_while(var_t args) {
     var_t pred = tbl_lookup(args.tbl, str_var("parameters"));
-    var_t code = tbl_lookup(args.tbl, str_var("code"));
+    var_t code = tbl_lookup(args.tbl, str_var("c"));
 
-    if (pred.type != TYPE_FN || pred.type != TYPE_BFN)
+    if (pred.type != TYPE_FN && pred.type != TYPE_BFN)
         return null_var;
 
     if (code.type != TYPE_FN && code.type != TYPE_BFN) {
-        var_t scope = tbl_create(2);
+        var_t scope = tbl_create(3);
         tbl_assign(scope.tbl, str_var("p"), pred);
         tbl_assign(scope.tbl, str_var("w"), fn_var(v_while));
-        tbl_assign(scope.tbl, str_var("super"), tbl_lookup(args.tbl, str_var("this")));
+        tbl_assign(scope.tbl, str_var(":"), v_assign);
 
-        var_t res = fn_create(str_var("[while,parameters:p,1:b] `w(parameters:p, )\0"), scope);
+        var_t res = fn_create(str_var("w(parameters:p,c:b)\0"), scope);
         tbl_assign(res.fn->args.tbl, str_var("block"), str_var("b"));
 
         return res;
+    }
+
+    while (1) {
+        var_t res = fn_call(pred, null_var);
+
+        var_print(res);
+
+        if (res.type == TYPE_NULL)
+            break;
+
+        fn_call(code, null_var);
+        break;
     }
 
     return null_var;

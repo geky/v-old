@@ -19,20 +19,13 @@
 #define HIDE_FLAG(h) ((var_t){.meta=(h)})
 
 #define S_ASSERT(a) if (!(a)) {              \
+                        printf("Failed!: " #a "\n"); \
                         p->val = null_var;   \
                         p->ended = 1;        \
                         p->has_val = 1;      \
                         p->has_key = 0;      \
                         return 1;            \
                     }
-
-enum {
-    DOT_OP        = ( 1<<3),
-    ASSIGN_OP     = ( 2<<3),
-    SET_OP        = ( 3<<3),
-    AND_OP        = ( 4<<3),
-    OR_OP         = ( 5<<3),
-};
 
 struct parse {
     var_t scope;
@@ -487,7 +480,6 @@ static int op_parse(struct parse *p) {
     if (p->in_op && p->has_val && p->op_space == 0)
         return 1;
 
-
     unsigned int op_space = p->op_space;
 
     var_t op;
@@ -562,7 +554,6 @@ static int op_parse(struct parse *p) {
         presolve_key(p);
         p->code++;
         p->op_space = MAX_SPACE;
-
     }
 
     int in_op = p->in_op;
@@ -720,7 +711,7 @@ static int paren_parse(struct parse *p) {
 
         m_block_parse(p);
 
-        pmtrs.fn->code.len = p->code - var_str(pmtrs);
+        pmtrs.fn->code.len = p->code - var_str(pmtrs.fn->code);
 
         p->val = fn_call(fn, p->val);
         p->target = target;

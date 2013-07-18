@@ -12,7 +12,7 @@
 int main() {
     d_set_stack();
 
-    var_t code = str_var("{k = 1+2; while(k) k=null}");
+    var_t code = str_var("{k = 1+2; while(k,l,m,n,) { super.k=17, super}; k}\0");
     var_t res, result;
     res = parse_single(code);
 
