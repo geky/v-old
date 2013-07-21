@@ -10,28 +10,40 @@
 
 
 void var_inc_ref(var_t var) {
+    assert(var.type != TYPE_ERR);
+
     if (var.type & 0x4)
         var_ref(var)++;
 }
 
 
 void var_dec_ref(var_t var) {
-    ref_t *ref;
+    assert(var.type != TYPE_ERR);
 
     if (!(var.type & 0x4))
         return;
 
-    ref = &var_ref(var);
+    ref_t *ref = &var_ref(var);
     assert(*ref > 0);
 
-    if (--(*ref) == 0) {
-        if (var.type == TYPE_TBL)
-            tbl_free(var.tbl);
-
-        var_free(ref);
-    }
+    if (--(*ref) == 0)
+        var_free(var);
 }
 
+void var_free(var_t var) {
+    if (!(var.type & 0xf))
+        return;
+
+    if (var.type == TYPE_ERR) {
+        var_dec_ref(*var.err);
+        return;
+    }
+
+    if (var.type == TYPE_TBL)
+        tbl_free(var.tbl);
+
+    var_dealloc(&var_ref(var));
+}
 
 
 void *var_alloc(size_t size) {
@@ -62,7 +74,7 @@ void *var_alloc(size_t size) {
     return temp.ptr;
 }
 
-void var_free(void *ptr) {
+void var_dealloc(void *ptr) {
 #ifndef NDEBUG
     if (ptr) {
         ptr = ((int64_t*)ptr) - 1;
@@ -76,19 +88,17 @@ void var_free(void *ptr) {
 
 void var_print(var_t v) {
     var_t result = light_repr(&v, 1);
-    printf("|%.*s|", result.len, var_str(result));
+    printf("var|%.*s|", result.len, var_str(result));
 }
 
 
 int var_equals(var_t a, var_t b) {
-    if (a.type != b.type && !((a.type == TYPE_STR && b.type == TYPE_CSTR) ||
-                              (a.type == TYPE_CSTR && b.type == TYPE_STR)  ))
+    if (a.type != b.type)
         return 0;
 
     switch (a.type) {
         case TYPE_NULL: return 1; // all nulls are equivalent
         case TYPE_NUM:  return var_num(a) == var_num(b);
-        case TYPE_CSTR:
         case TYPE_STR:  return !memcmp(var_str(a), var_str(b), a.len);
         default:        return b.data == b.data;
     }
@@ -115,7 +125,6 @@ hash_t var_hash(var_t var) {
             return hash ^ var.meta;
         }
 
-        case TYPE_CSTR:
         case TYPE_STR: {
             // based off the djb2 algorithm
             hash_t hash = 5381;
@@ -335,7 +344,6 @@ var_t light_repr(var_t *v, int n) {
             }
         }
 
-        case TYPE_CSTR:
         case TYPE_STR: {
             var_t val;
 
@@ -438,7 +446,7 @@ var_t light_repr(var_t *v, int n) {
                 *(str-2) = ']';
             }
 
-            var_free(entstrs);
+            var_dealloc(entstrs);
 
             return val;
         }
@@ -448,6 +456,9 @@ var_t light_repr(var_t *v, int n) {
 
         case TYPE_BFN:
             return str_var("fn() <builtin>");
+
+        case TYPE_ERR:
+            return str_var("ERROR");
 
         default:
             assert(0); // Unable to represent bad value

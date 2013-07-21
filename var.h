@@ -17,14 +17,14 @@ typedef enum type {
     TYPE_NULL = 0x0,
 
     TYPE_NUM  = 0x1,
+    TYPE_STR  = 0x4,
 
-    TYPE_STR  = 0x6,
-    TYPE_CSTR = 0x2,
+    TYPE_TBL  = 0x5,
 
-    TYPE_TBL  = 0x4,
+    TYPE_FN   = 0x6,
+    TYPE_BFN  = 0x2,
 
-    TYPE_FN   = 0x7,
-    TYPE_BFN  = 0x3,
+    TYPE_ERR  = 0x7
 } type_t;
 
 typedef uint32_t hash_t;
@@ -55,6 +55,8 @@ typedef struct var {
                 struct tbl *tbl;
                 struct fn *fn;
                 struct var (*bfn)(struct var);
+
+                struct var *err;
             };
         };
 
@@ -69,30 +71,32 @@ typedef struct var {
 #define var_ref(v) (*((var_t){{(v).bits & ~0x7}}).ref)
 
 #define var_num(v) (((var_t){{(v).bits & ~0x7}}).num)
-#define var_str(v) ((const char*)(&var_ref(v)+1) + ((v).off))
+#define var_str(v) ((v).str + (v).off)
 
 // macros for creating literal vars in c
 
 #define null_var     ((var_t){{0}})
 #define null_flag(n) ((var_t){.meta=(~0x7 & (n))})
+#define err_flag(n)  ((var_t){.meta=( 0x7 | (n))})
 
 #define num_var(n)   ((var_t){{TYPE_NUM | (~0x7 & ((var_t){.num=(n)}).bits)}})
 #define nan_var      num_var(NAN)
 #define inf_var      num_var(INFINITY)
 
-#define str_var(n)   ({ const static struct {                  \
+#define str_var(n)   ({ static struct {                        \
                           ref_t __attribute__((aligned(8))) r; \
-                          char s[sizeof(n)-1];                 \
+                          const char s[sizeof(n)-1];           \
                         } str = { 1, {(n)} };                  \
                                                                \
-                        ((var_t){{TYPE_CSTR |                  \
+                        ((var_t){{TYPE_STR |                   \
                           (~0x7 & ((var_t){                    \
                             .ref = (ref_t*)&str,               \
                             .off = 0,                          \
                             .len = sizeof(n)-1                 \
                           }).bits)    }});     })
 
-#define fn_var(n)  ((var_t){{TYPE_BFN | (~0x7 & ((var_t){.bfn=(n)}).bits)}})
+#define fn_var(n)   ((var_t){.type=TYPE_BFN, .bfn=(n)})
+
 
 
 
@@ -104,14 +108,16 @@ typedef struct var {
 void var_inc_ref(var_t var);
 void var_dec_ref(var_t var);
 
+// Function for manually freeing variables
+void var_free(var_t var);
+
 // Internal wrapper for malloc that handles things like
 // failures and alignment.
 void *var_alloc(size_t size);
-void var_free(void *ptr);
+void var_dealloc(void *ptr);
 
-/*!! for debugging !!*/
+// Function for printing variables easily for debugging
 void var_print(var_t v);
-
 
 // Equals returns true if both variables are the
 // same type and equivalent.

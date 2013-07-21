@@ -16,16 +16,8 @@
 
 #define MAX_SPACE 0xffff
 
-#define NONE null_flag(0xffff0000)
-#define HAS(v) ((v).meta != 0xffff0000)
-
-#define S_ASSERT(a) if (!(a)) {              \
-                        printf("S ASSERT FAIL %d: " #a "\n", __LINE__); \
-                        p->val = null_var;   \
-                        p->key = NONE;       \
-                        p->ended = 1;        \
-                        return 1;            \
-                    }
+#define NONE        null_flag(0xffff0000)
+#define HAS(v)      ((v).meta != 0xffff0000)
 
 struct parse {
     var_t scope;
@@ -54,6 +46,15 @@ struct parse {
 extern int (*parsers[128])(struct parse *p);
 extern int (*skippers[128])(struct parse *p);
 
+static void syntax_error(struct parse *p, var_t msg) {
+    p->ended = 1;
+
+    var_t err = tbl_create(3);
+    tbl_assign(err.tbl, str_var("type"), str_var("syntax_error"));
+    tbl_assign(err.tbl, str_var("message"), msg);
+
+    p->val = err_var(err);
+}
 
 static inline void presolve(struct parse *p) {
     if (HAS(p->key)) {
@@ -165,7 +166,10 @@ static inline void subskip(struct parse *p) {
 static int apply_block(struct parse *p) {
     presolve_fn(p);
 
-    S_ASSERT(p->val.type == TYPE_FN || p->val.type == TYPE_BFN);
+    if (p->val.type != TYPE_FN && p->val.type != TYPE_BFN) {
+        syntax_error(p, str_var("Can not apply block"));
+        return 1;
+    }
 
     var_t args = tbl_create(2);
     tbl_assign(args.tbl, str_var("this"), p->val);
@@ -190,7 +194,7 @@ static int apply_block(struct parse *p) {
 
 
 var_t veval_str(var_t input) {
-    assert(input.type == TYPE_STR || input.type == TYPE_CSTR);
+    assert(input.type == TYPE_STR);
 
     var_t scope = tbl_create(0);
     add_builtins(scope.tbl);
@@ -203,7 +207,7 @@ var_t veval_cstr(const char *input) {
 }
 
 var_t vparse(var_t code, var_t scope) {
-    assert(code.type == TYPE_STR || code.type == TYPE_CSTR);
+    assert(code.type == TYPE_STR);
     assert(scope.type == TYPE_TBL);
 
     struct parse p = {
@@ -226,7 +230,8 @@ var_t vparse(var_t code, var_t scope) {
 
 
 static int bad_parse(struct parse *p) {
-    S_ASSERT(0);
+    syntax_error(p, str_var("Unexpected character"));
+    return 1;
 }
 
 static int space_parse(struct parse *p) {
@@ -277,7 +282,10 @@ static int comm_parse(struct parse *p) {
     uint16_t c = 0;
 
     while (1) {
-        S_ASSERT(++p->code != p->end);
+        if (++p->code == p->end) {
+            syntax_error(p, str_var("Unterminated comment"));
+            return 1;
+        }
 
         if (*p->code == '`') {
             if (++c == n) {
@@ -299,8 +307,12 @@ static int str_parse(struct parse *p) {
     char quote = *p->code++;
     const char *s = p->code;
 
-    while (*p->code != quote)
-        S_ASSERT(++p->code != p->end);
+    while (*p->code != quote) {
+        if (++p->code == p->end) {
+            syntax_error(p, str_var("Unterminated str literal"));
+            return 1;
+        }
+    }
 
     p->val.meta = p->meta;
     p->val.off = (uint16_t)(s - p->start);
@@ -471,7 +483,10 @@ static int op_parse(struct parse *p) {
             op_k.len--;
             p->code--;
 
-            S_ASSERT(op_k.len > 0);
+            if (op_k.len <= 0) {
+                syntax_error(p, str_var("Operator not found"));
+                return 1;
+            }
         }
 
         if (op.meta == ASSIGN_OP) {
@@ -655,7 +670,11 @@ static int paren_parse(struct parse *p) {
     if (HAS(p->key) || HAS(p->val)) {
         presolve_fn(p);
 
-        S_ASSERT(p->val.type == TYPE_FN || p->val.type == TYPE_BFN);
+        if (p->val.type != TYPE_FN && p->val.type != TYPE_BFN) {
+            syntax_error(p, str_var("Not a fn"));
+            return 1;
+        }
+
         var_t fn = p->val;
         var_t pmtrs;
 
@@ -687,7 +706,11 @@ static int paren_parse(struct parse *p) {
     }
 
     p->pre_space = 0;
-    S_ASSERT(*p->code++ == ')');
+    
+    if (*p->code++ != ')') {
+        syntax_error(p, str_var("Unmatched parenthesis"));
+        return 1;
+    }
     return 0;
 }
 
@@ -714,7 +737,11 @@ static int brace_parse(struct parse *p) {
     }
 
     p->pre_space = 0;
-    S_ASSERT(*p->code++ == ']');
+
+    if (*p->code++ != ']') {
+        syntax_error(p, str_var("Unmatched brace"));
+        return 1;
+    }
     return 0;
 }
 
@@ -735,7 +762,11 @@ static int bracket_parse(struct parse *p) {
     p->scope = scope;
 
     p->pre_space = 0;
-    S_ASSERT(*p->code++ == '}');
+
+    if (*p->code++ != '}') {
+        syntax_error(p, str_var("Unmatched bracket"));
+        return 1;
+    }
     return 0;
 }
 
@@ -878,24 +909,36 @@ static int skip(struct parse *p) {
 }
 
 static int paren_skip(struct parse *p) {
-    while (*p->code != ')')
-        S_ASSERT(++p->code != p->end);
+    while (*p->code != ')') {
+        if (++p->code == p->end) {
+            syntax_error(p, str_var("Unmatched parenthesis"));
+            return 1;
+        }
+    }
 
     p->code++;
     return 0;
 }
 
 static int brace_skip(struct parse *p) {
-    while (*p->code != ']')
-        S_ASSERT(++p->code != p->end);
+    while (*p->code != ']') {
+        if (++p->code == p->end) {
+            syntax_error(p, str_var("Unmatched brace"));
+            return 1;
+        }
+    }
 
     p->code++;
     return 0;
 }
 
 static int bracket_skip(struct parse *p) {
-    while (*p->code != '}')
-        S_ASSERT(++p->code != p->end);
+    while (*p->code != '}') {
+        if (++p->code == p->end) {
+            syntax_error(p, str_var("Unmatched bracket"));
+            return 1;
+        }
+    }
 
     p->code++;
     return 0;
@@ -903,8 +946,13 @@ static int bracket_skip(struct parse *p) {
 
 static int str_skip(struct parse *p) {
     char quote = *p->code++;
-    while (*p->code != quote)
-        S_ASSERT(++p->code != p->end);
+
+    while (*p->code != quote) {
+        if (++p->code == p->end) {
+            syntax_error(p, str_var("Unterminated str literal"));
+            return 1;
+        }
+    }
 
     p->code++;
     return 0;
@@ -920,8 +968,7 @@ static int op_skip(struct parse *p) {
 
 static int word_skip(struct parse *p) {
     if (p->skip_to) {
-        assert( p->target.type == TYPE_STR ||
-                p->target.type == TYPE_CSTR );
+        assert(p->target.type == TYPE_STR);
 
         if ( p->end - p->code > p->target.len &&
              !memcmp(p->code, var_str(p->target), p->target.len) ) {
@@ -1071,8 +1118,7 @@ var_t v_fn_split(var_t args) {
     var_t code1 = fn1.fn->code;
     var_t word = tbl_lookup(args.tbl, num_var(1));
 
-    if ( fn1.type != TYPE_FN || 
-         (word.type != TYPE_STR && word.type != TYPE_CSTR) )
+    if (fn1.type != TYPE_FN || word.type != TYPE_STR)
         return null_var;
 
     struct parse p = {

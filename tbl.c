@@ -64,7 +64,7 @@ void tbl_free(tbl_t *tbl) {
         }
     }
 
-    var_free(entries);
+    var_dealloc(entries);
 }
 
 
@@ -102,7 +102,7 @@ static uint32_t tbl_resize(tbl_t *tbl, uint32_t len) {
         }
     }
 
-    var_free(oldent);
+    var_dealloc(oldent);
     return len;
 }
 
@@ -297,7 +297,6 @@ var_t light_tbl(var_t *v, int n) {
         case TYPE_NUM:
             return tbl_create(ceil(var_num(*v)));
 
-        case TYPE_CSTR:
         case TYPE_STR: {
             uint32_t i, len = v->len;
 

@@ -12,8 +12,10 @@
 int main() {
     d_set_stack();
 
+    var_t eh = str_var("hello");
+
     var_t res, result;
-    res = veval_cstr("2+5");
+    res = veval_cstr("2+5 / 0");
 
     result = light_repr(&res, 1);
     printf("Result: %.*s\n", result.len, var_str(result));
