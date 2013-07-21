@@ -12,9 +12,8 @@
 int main() {
     d_set_stack();
 
-    var_t code = str_var("{k = 2; k += 2}\0");
     var_t res, result;
-    res = parse_single(code);
+    res = veval_cstr("2+5");
 
     result = light_repr(&res, 1);
     printf("Result: %.*s\n", result.len, var_str(result));

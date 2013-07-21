@@ -42,18 +42,11 @@ var_t fn_call(var_t vfn, var_t args) {
             if (args.type == TYPE_TBL) {
                 for_tbl(key, val, args.tbl, {
                     var_t temp = tbl_lookup(fn->args.tbl, key);
-                    var_print(temp);
 
                     if (temp.meta)
                         tbl_assign(scope.tbl, temp, val);
                 });
             }
-
-            printf("calling ");
-            var_print(fn->code);
-            printf("\nwith ");
-            var_print(scope);
-            printf("\n");
 
             return vparse(fn->code, scope);
         }

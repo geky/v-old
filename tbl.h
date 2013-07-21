@@ -22,18 +22,18 @@ typedef struct tbl {
 
 
 // macro for looping through all values in a table
-#define for_tbl(k, v, tbl, block) {                         \
-        int i, l = ((uint64_t)1) << (tbl)->size;            \
-        var_t k, v;                                         \
-                                                            \
-        for (i=0; i<l; i++) {                               \
-            k = (tbl)->entries[i].key;                      \
-            v = (tbl)->entries[i].val;                      \
-            if ( k.type != TYPE_NULL &&                     \
-                 v.type != TYPE_NULL ) {                    \
-                block                                       \
-            }                                               \
-        }                                                   \
+#define for_tbl(k, v, tbl, block) {                 \
+        int i, l = ((uint64_t)1) << tbl->size;      \
+        var_t k, v;                                 \
+                                                    \
+        for (i=0; i<l; i++) {                       \
+            k = (tbl)->entries[i].key;              \
+            v = (tbl)->entries[i].val;              \
+            if ( k.type != TYPE_NULL &&             \
+                 v.type != TYPE_NULL ) {            \
+                block                               \
+            }                                       \
+        }                                           \
     }
 
 

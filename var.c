@@ -81,7 +81,8 @@ void var_print(var_t v) {
 
 
 int var_equals(var_t a, var_t b) {
-    if (a.type != b.type)
+    if (a.type != b.type && !((a.type == TYPE_STR && b.type == TYPE_CSTR) ||
+                              (a.type == TYPE_CSTR && b.type == TYPE_STR)  ))
         return 0;
 
     switch (a.type) {
@@ -296,7 +297,7 @@ var_t light_repr(var_t *v, int n) {
                 int i, length = expform ? 10 : 15;
 
                 for (i=0; (num > 0.0 || digit >= 1.0) && i<length; i++) {
-                    if (digit == 0.1)
+                    if (digit < 0.5 && digit > 0.05)
                         *(str++) = '.';
 
                     int d = floor(num / digit);

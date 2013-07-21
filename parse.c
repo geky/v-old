@@ -14,16 +14,16 @@
 
 //TODO create errors
 
-#define MAX_SPACE 0xfffff
+#define MAX_SPACE 0xffff
 
-#define HIDE_FLAG(h) ((var_t){.meta=(h)})
+#define NONE null_flag(0xffff0000)
+#define HAS(v) ((v).meta != 0xffff0000)
 
 #define S_ASSERT(a) if (!(a)) {              \
                         printf("S ASSERT FAIL %d: " #a "\n", __LINE__); \
                         p->val = null_var;   \
+                        p->key = NONE;       \
                         p->ended = 1;        \
-                        p->has_val = 1;      \
-                        p->has_key = 0;      \
                         return 1;            \
                     }
 
@@ -43,9 +43,7 @@ struct parse {
     const char *code;
     const char *end;
 
-    int has_val  : 1;
-    int has_key  : 1;
-    int has_asg  : 1;
+    int assign   : 1;
     int in_paren : 1;
     int in_op    : 1;
     int ended    : 1;
@@ -58,8 +56,8 @@ extern int (*skippers[128])(struct parse *p);
 
 
 static inline void presolve(struct parse *p) {
-    if (p->has_key) {
-        if (p->has_val) {
+    if (HAS(p->key)) {
+        if (HAS(p->val)) {
             if (p->val.type == TYPE_TBL)
                 p->val = tbl_lookup(p->val.tbl, p->key);
             else
@@ -68,26 +66,24 @@ static inline void presolve(struct parse *p) {
             assert(p->scope.type == TYPE_TBL);
             p->val = tbl_lookup(p->scope.tbl, p->key);
         }
-    } else if (!p->has_val) {
+
+        p->key = NONE;
+
+    } else if (!HAS(p->val)) {
         p->val = null_var;
     }
-
-    p->has_val = 1;
-    p->has_key = 0;
 }
 
 static inline void presolve_key(struct parse *p) {
     assert(p->target.type == TYPE_TBL);
 
-    if (!p->has_key) {
-        if (p->has_val) {
+    if (!HAS(p->key)) {
+        if (HAS(p->val)) {
             p->key = p->val;
             p->val = p->target;
-        } else {
-            p->key = null_var;
         }
     } else {
-        if (p->has_val) {
+        if (HAS(p->val)) {
             if (p->val.type != TYPE_TBL) {
                 presolve(p);
                 p->key = p->val;
@@ -97,23 +93,20 @@ static inline void presolve_key(struct parse *p) {
             p->val = p->target;
         }
     }
-
-    p->has_val = 1;
-    p->has_key = 1;
 }
 
 static inline void presolve_fn(struct parse *p) {
     assert(p->target.type == TYPE_TBL);
 
-    if (p->has_key) {
-        if (p->has_val) {
+    if (HAS(p->key)) {
+        if (HAS(p->val)) {
             if (p->val.type == TYPE_TBL) {
                 var_t temp = p->val;
                 p->val = tbl_lookup(p->val.tbl, p->key);
                 p->key = temp;
             } else {
-                p->key = null_var;
-                p->val = null_var;
+                p->key = NONE;
+                p->val = NONE;
             }
         } else {
             assert(p->scope.type == TYPE_TBL);
@@ -121,16 +114,13 @@ static inline void presolve_fn(struct parse *p) {
             p->key = p->scope;
         }
     } else {
-        if (p->has_val) {
+        if (HAS(p->val)) {
             p->key = p->scope;
         } else {
             p->key = null_var;
             p->val = null_var;
         }
     }
-
-    p->has_val = 1;
-    p->has_key = 1;
 }
 
 static inline void subparse(struct parse *p) {
@@ -145,11 +135,11 @@ static inline void subparse(struct parse *p) {
 #ifndef NDEBUG
     printf("|%.*s| => ", p->code-s, s);
 
-    if (p->has_val) {
+    if (HAS(p->val)) {
         var_print(p->val);
     }
 
-    if (p->has_key) {
+    if (HAS(p->key)) {
         printf(".");
         var_print(p->key);
     }
@@ -194,44 +184,22 @@ static int apply_block(struct parse *p) {
     }
 
     p->val = fn_call(p->val, args);
-
-    p->key = null_var;
-    p->has_key = 0;
+    p->key = NONE;
     return 1;
 }
 
 
-var_t parse_single(var_t input) {
-    if (input.type != TYPE_STR && input.type != TYPE_CSTR)
-        return null_var;
+var_t veval_str(var_t input) {
+    assert(input.type == TYPE_STR || input.type == TYPE_CSTR);
 
-    struct parse p = {
-        .scope = tbl_create(0),
+    var_t scope = tbl_create(0);
+    add_builtins(scope.tbl);
 
-        .meta = input.meta,
-        .start = var_str(input) - input.off,
-        .code = var_str(input),
-        .end = var_str(input) + input.len,
-    };
+    return vparse(input, scope);
+}
 
-    p.target = p.scope;
-
-    tbl_assign(p.scope.tbl, str_var("+"), fn_var(v_add));
-    tbl_assign(p.scope.tbl, str_var("*"), fn_var(v_mul));
-    tbl_assign(p.scope.tbl, str_var(">"), fn_var(v_gt));
-    tbl_assign(p.scope.tbl, str_var(":"), v_assign);
-    tbl_assign(p.scope.tbl, str_var("="), v_set);
-    tbl_assign(p.scope.tbl, str_var("."), v_dot);
-    tbl_assign(p.scope.tbl, str_var("||"), v_or);
-    tbl_assign(p.scope.tbl, str_var("&&"), v_and);
-
-    tbl_assign(p.scope.tbl, str_var("if"), fn_var(v_if));
-    tbl_assign(p.scope.tbl, str_var("while"), fn_var(v_while));
-    tbl_assign(p.scope.tbl, str_var("for"), fn_var(v_for));
-
-    subparse(&p);
-    presolve(&p);
-    return p.val;
+var_t veval_cstr(const char *input) {
+    return veval_str(str_create(input, strlen(input)));
 }
 
 var_t vparse(var_t code, var_t scope) {
@@ -246,13 +214,15 @@ var_t vparse(var_t code, var_t scope) {
         .start = var_str(code) - code.off,
         .code = var_str(code),
         .end = var_str(code) + code.len,
+
+        .val = NONE,
+        .key = NONE
     };
 
     subparse(&p);
     presolve(&p);
     return p.val;
 }
-
 
 
 static int bad_parse(struct parse *p) {
@@ -321,7 +291,7 @@ static int comm_parse(struct parse *p) {
 }
 
 static int str_parse(struct parse *p) {
-    if (p->has_key || p->has_val)
+    if (HAS(p->key) || HAS(p->val))
         return apply_block(p);
 
     p->pre_space = 0;
@@ -335,13 +305,12 @@ static int str_parse(struct parse *p) {
     p->val.meta = p->meta;
     p->val.off = (uint16_t)(s - p->start);
     p->val.len = (uint16_t)(p->code++ - s);
-    p->has_val = 1;
 
     return 0;
 }
 
 static int num_parse(struct parse *p) {
-    if (p->has_key || p->has_val)
+    if (HAS(p->key) || HAS(p->val))
         return apply_block(p);
 
     p->pre_space = 0;
@@ -396,7 +365,6 @@ static int num_parse(struct parse *p) {
             } else {
                 p->code--;
                 p->val.type = TYPE_NUM;
-                p->has_val = 1;
                 return 0;
             }
         }
@@ -419,7 +387,6 @@ static int num_parse(struct parse *p) {
         if (i >= base.radix) {
             p->code--;
             p->val.type = TYPE_NUM;
-            p->has_val = 1;
             return 0;
         }
 
@@ -448,7 +415,6 @@ exp:
             p->val.num *= pow(base.radix, sign*scale);
             p->code--;
             p->val.type = TYPE_NUM;
-            p->has_val = 1;
             return 0;
         }
 
@@ -458,7 +424,7 @@ exp:
 }
     
 static int word_parse(struct parse *p) {
-    if (p->has_key || p->has_val)
+    if (HAS(p->key) || HAS(p->val))
         return apply_block(p);
 
     p->pre_space = 0;
@@ -472,13 +438,12 @@ static int word_parse(struct parse *p) {
     p->key.meta = p->meta;
     p->key.off = (uint16_t)(s - p->start);
     p->key.len = (uint16_t)(p->code - s);
-    p->has_key = 1;
 
     return p->dotted;
 }
 
 static int op_parse(struct parse *p) {
-    if (p->in_op && p->has_val && p->op_space == 0)
+    if (p->in_op && HAS(p->val) && p->op_space == 0)
         return 1;
 
     unsigned int op_space = p->op_space;
@@ -538,10 +503,8 @@ static int op_parse(struct parse *p) {
 
             p->op_space = p->code - (s + op_k.len);
 
-            printf("!%d %d!\n", p->op_space, p->pre_space);
-
             if (p->op_space < p->pre_space) {
-                if (p->has_key || p->has_val) {
+                if (HAS(p->key) || HAS(p->val)) {
                     p->code = s - p->pre_space;
                     p->op_space = op_space;
 
@@ -573,10 +536,8 @@ static int op_parse(struct parse *p) {
         goto op_done;
     }
 
-    p->key = null_var;
-    p->val = null_var;
-    p->has_key = 0;
-    p->has_val = 0;
+    p->key = NONE;
+    p->val = NONE;
     p->dotted = (op.meta == DOT_OP);
 
     subparse(p);
@@ -598,7 +559,7 @@ static int op_parse(struct parse *p) {
  
     if (tbl_op) {
         tbl_op(ltbl, lkey, p->val);
-        p->has_asg = 1;
+        p->assign = 1;
     }
 
 op_done:
@@ -636,22 +597,20 @@ static void m_block_parse(struct parse *p) {
     p->n = 0.0;
 
     while (!p->ended) {
-        p->has_asg = 0;
+        p->assign = 0;
 
         subparse(p);
         presolve(p);
 
-        if (!p->has_asg) {
+        if (!p->assign) {
             tbl_assign(p->target.tbl, num_var(p->n), p->val);
             p->n++;
         }
 
-        p->val = null_var;
-        p->has_val = 0;
+        p->val = NONE;
     }
 
     p->val = p->target;
-    p->has_val = 1;
     p->in_paren = in_paren;
     p->in_op = in_op;
     p->op_space = op_space;
@@ -667,12 +626,19 @@ static void b_block_parse(struct parse *p) {
     p->in_paren = 0;
     p->in_op = 0;
 
+    var_t prev = NONE;
+
     while (!p->ended) {
-        p->val = null_var;
-        p->has_val = 0;
+        p->val = NONE;
 
         subparse(p);
-        presolve(p);
+
+        if (HAS(p->val) || HAS(p->key)) {
+            presolve(p);
+            prev = p->val;
+        } else {
+            p->val = prev;
+        }
     }
 
     p->in_paren = in_paren;
@@ -686,7 +652,7 @@ static void b_block_parse(struct parse *p) {
 static int paren_parse(struct parse *p) {
     p->code++;
 
-    if (p->has_key || p->has_val) {
+    if (HAS(p->key) || HAS(p->val)) {
         presolve_fn(p);
 
         S_ASSERT(p->val.type == TYPE_FN || p->val.type == TYPE_BFN);
@@ -706,10 +672,8 @@ static int paren_parse(struct parse *p) {
         tbl_assign(p->target.tbl, str_var("this"), p->key);
         tbl_assign(p->target.tbl, str_var("parameters"), pmtrs);
 
-        p->val = null_var;
-        p->has_val = 0;
-        p->key = null_var;
-        p->has_key = 0;
+        p->val = NONE;
+        p->key = NONE;
 
         m_block_parse(p);
 
@@ -730,17 +694,15 @@ static int paren_parse(struct parse *p) {
 static int brace_parse(struct parse *p) {
     p->code++;
 
-    if (p->has_key || p->has_val) {
+    if (HAS(p->key) || HAS(p->val)) {
         presolve(p);
         var_t tbl = p->val;
 
-        p->val = null_var;
-        p->has_val = 0;
+        p->val = NONE;
         s_block_parse(p);
         presolve(p);
 
         p->key = p->val;
-        p->has_key = 1;
         p->val = tbl;
 
     } else {
@@ -757,7 +719,7 @@ static int brace_parse(struct parse *p) {
 }
 
 static int bracket_parse(struct parse *p) {
-    if (p->has_key || p->has_val)
+    if (HAS(p->key) || HAS(p->val))
         return apply_block(p);
 
     p->code++;
@@ -949,7 +911,7 @@ static int str_skip(struct parse *p) {
 }
 
 static int op_skip(struct parse *p) {
-    if (p->in_op && p->has_val && p->op_space == 0)
+    if (p->in_op && HAS(p->val) && p->op_space == 0)
         return 1;
 
     p->code++;
@@ -1121,6 +1083,9 @@ var_t v_fn_split(var_t args) {
         .code = var_str(code1),
         .end = var_str(code1) + code1.len,
 
+        .val = NONE,
+        .key = NONE,
+
         .skip_to = 1,
     };
 
@@ -1158,6 +1123,9 @@ var_t v_fn_token(var_t args) {
         .start = var_str(code) - code.off,
         .code = var_str(code),
         .end = var_str(code) + code.len,
+
+        .val = NONE,
+        .key = NONE,
 
         .skip_to = 1,
         .target = str_var(""),
