@@ -1,6 +1,7 @@
 #include "var.h"
 
 #include "tbl.h"
+#include "err.h"
 #include "vdbg.h"
 
 #include <math.h>
@@ -35,7 +36,7 @@ void var_free(var_t var) {
         return;
 
     if (var.type == TYPE_ERR) {
-        var_dec_ref(*var.err);
+        err_free(var);
         return;
     }
 
@@ -88,7 +89,7 @@ void var_dealloc(void *ptr) {
 
 void var_print(var_t v) {
     var_t result = light_repr(&v, 1);
-    printf("var|%.*s|", result.len, var_str(result));
+    printf("%.*s", result.len, var_str(result));
 }
 
 
@@ -458,7 +459,7 @@ var_t light_repr(var_t *v, int n) {
             return str_var("fn() <builtin>");
 
         case TYPE_ERR:
-            return str_var("ERROR");
+            return str_var("error");
 
         default:
             assert(0); // Unable to represent bad value
@@ -470,4 +471,3 @@ var_t light_repr(var_t *v, int n) {
 var_t light_null(var_t *v, int n) {
     return null_var;
 }
-

@@ -11,6 +11,7 @@ V_O=main.o    \
     str.o     \
     tbl.o     \
     fn.o      \
+    err.o     \
     parse.o   \
     builtin.o \
     vdbg.o

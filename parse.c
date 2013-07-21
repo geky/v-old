@@ -5,6 +5,7 @@
 #include "str.h"
 #include "tbl.h"
 #include "fn.h"
+#include "err.h"
 
 #include "vdbg.h"
 
@@ -53,7 +54,7 @@ static void syntax_error(struct parse *p, var_t msg) {
     tbl_assign(err.tbl, str_var("type"), str_var("syntax_error"));
     tbl_assign(err.tbl, str_var("message"), msg);
 
-    p->val = err_var(err);
+    p->val = err_create(err);
 }
 
 static inline void presolve(struct parse *p) {
@@ -189,6 +190,10 @@ static int apply_block(struct parse *p) {
 
     p->val = fn_call(p->val, args);
     p->key = NONE;
+
+    if (p->val.type == TYPE_ERR)
+        p->ended = 1;
+
     return 1;
 }
 
@@ -570,6 +575,10 @@ static int op_parse(struct parse *p) {
         tbl_assign(args.tbl, num_var(1), p->val);
 
         p->val = fn_call(op, args);
+        if (p->val.type == TYPE_ERR) {
+            return 1;
+            p->ended = 1;
+        }
     }
  
     if (tbl_op) {
@@ -700,6 +709,11 @@ static int paren_parse(struct parse *p) {
 
         p->val = fn_call(fn, p->val);
         p->target = target;
+
+        if (p->val.type == TYPE_ERR) {
+            p->ended = 1;
+            return 1;
+        }
 
     } else {
         s_block_parse(p);
